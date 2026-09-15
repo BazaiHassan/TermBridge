@@ -11,6 +11,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,9 +24,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -86,12 +89,16 @@ private fun TerminalScreen(vm: TerminalViewModel, onBack: () -> Unit) {
         TopBar(
             ui = ui,
             onBack = onBack,
+            onNewShell = vm::newShell,
+            onCloseShell = { if (!vm.closeShell()) onBack() },
             onPaste = { clipboard.getText()?.text?.let { terminal?.paste(it) } },
             onDisconnect = {
                 vm.disconnect()
                 onBack()
             },
         )
+        if (ui.tabs.size > 1) TabStrip(ui.tabs, ui.selectedKey, onSelect = vm::selectShell)
+        LaunchedEffect(ui.selectedKey) { terminal?.emulator = vm.emulator } // switch the screen to that tab
         Box(Modifier.fillMaxWidth().height(2.dp)) {
             if (ui.status == TerminalStatus.Connecting || ui.status is TerminalStatus.Reconnecting) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -147,7 +154,14 @@ private fun AskForNotifications() {
 }
 
 @Composable
-private fun TopBar(ui: TerminalUiState, onBack: () -> Unit, onPaste: () -> Unit, onDisconnect: () -> Unit) {
+private fun TopBar(
+    ui: TerminalUiState,
+    onBack: () -> Unit,
+    onNewShell: () -> Unit,
+    onCloseShell: () -> Unit,
+    onPaste: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
     var menu by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().height(56.dp).background(MaterialTheme.colorScheme.surfaceContainerLow).padding(end = 4.dp),
@@ -159,11 +173,46 @@ private fun TopBar(ui: TerminalUiState, onBack: () -> Unit, onPaste: () -> Unit,
             Text(ui.endpoint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         StatusPill(ui)
+        IconButton(onClick = onNewShell, enabled = ui.canAddShell) { Icon(Icons.Filled.Add, contentDescription = "New shell") }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Paste") }, onClick = { menu = false; onPaste() })
-                DropdownMenuItem(text = { Text("End session") }, onClick = { menu = false; onDisconnect() })
+                DropdownMenuItem(text = { Text("New shell") }, enabled = ui.canAddShell, onClick = { menu = false; onNewShell() })
+                if (ui.tabs.size > 1) DropdownMenuItem(text = { Text("Close this shell") }, onClick = { menu = false; onCloseShell() })
+                DropdownMenuItem(
+                    text = { Text(if (ui.tabs.size > 1) "End all shells" else "End session") },
+                    onClick = { menu = false; onDisconnect() },
+                )
+            }
+        }
+    }
+}
+
+/** One chip per shell; shown once there are two or more. */
+@Composable
+private fun TabStrip(tabs: List<TabUi>, selectedKey: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        tabs.forEach { tab ->
+            val selected = tab.key == selectedKey
+            Surface(
+                onClick = { onSelect(tab.key) },
+                shape = MaterialTheme.shapes.small,
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(if (tab.open) TbPalette.Mint else MaterialTheme.colorScheme.outline, pulsing = false, size = 6.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(tab.label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                }
             }
         }
     }
@@ -176,6 +225,7 @@ private fun StatusPill(ui: TerminalUiState) {
         is TerminalStatus.Live -> Triple(TbPalette.Mint, ui.rttMillis?.let { "$it ms" } ?: "live", true)
         is TerminalStatus.Reconnecting -> Triple(TbPalette.Amber, "reconnecting", true)
         is TerminalStatus.Exited -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "exit ${s.exitCode}", false)
+        is TerminalStatus.ShellFailed -> Triple(TbPalette.Coral, "no shell", false)
         is TerminalStatus.Lost -> Triple(TbPalette.Coral, "offline", false)
     }
     Pill(label, leading = { StatusDot(color, pulsing = live, size = 7.dp) })
@@ -184,7 +234,8 @@ private fun StatusPill(ui: TerminalUiState) {
 @Composable
 private fun StatusCard(status: TerminalStatus, onRestart: () -> Unit, modifier: Modifier = Modifier) {
     val content: Triple<String, String, String>? = when (status) {
-        is TerminalStatus.Exited -> Triple("Shell exited", "Exit code ${status.exitCode}", "New session")
+        is TerminalStatus.Exited -> Triple("Shell exited", "Exit code ${status.exitCode}", "New shell")
+        is TerminalStatus.ShellFailed -> Triple("Couldn't open a shell", status.reason, "Try again")
         is TerminalStatus.Reconnecting -> Triple("Reconnecting… your shell is still running", status.reason, "Retry now")
         is TerminalStatus.Lost -> Triple("Connection lost", status.reason, "Reconnect")
         else -> null

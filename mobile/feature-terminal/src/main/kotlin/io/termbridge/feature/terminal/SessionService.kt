@@ -37,7 +37,7 @@ class SessionService : Service() {
     private var watching = false
     private var lastStartId = 0
 
-    private data class Running(val agentId: String, val name: String, val status: TerminalStatus)
+    private data class Running(val agentId: String, val name: String, val state: SessionState)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -73,8 +73,8 @@ class SessionService : Service() {
     }
 
     private fun running(): List<Running> = sessions.active.value.values
-        .map { Running(it.agentId, it.name, it.state.value.status) }
-        .filter { it.status.isRunning }
+        .map { Running(it.agentId, it.name, it.state.value) }
+        .filter { it.state.isRunning }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun watch() {
@@ -83,7 +83,7 @@ class SessionService : Service() {
                 if (open.isEmpty()) {
                     flowOf(emptyList())
                 } else {
-                    combine(open.values.map { s -> s.state.map { Running(s.agentId, s.name, it.status) } }) { all -> all.filter { it.status.isRunning } }
+                    combine(open.values.map { s -> s.state.map { Running(s.agentId, s.name, it) } }) { all -> all.filter { it.state.isRunning } }
                 }
             }
             .collect { running ->
@@ -100,10 +100,12 @@ class SessionService : Service() {
         val (title, text) = when (running.size) {
             0 -> "TermBridge" to "Ending sessions…"
             1 -> running.single().let { r ->
-                when (r.status) {
-                    is TerminalStatus.Reconnecting -> "Reconnecting to ${r.name}…" to "Your shell keeps running on ${r.name}."
+                val one = r.state.openShells == 1
+                val shells = if (one) "Your shell" else "${r.state.openShells} shells"
+                when (r.state.status) {
+                    is TerminalStatus.Reconnecting -> "Reconnecting to ${r.name}…" to "$shells ${if (one) "keeps" else "keep"} running on ${r.name}."
                     TerminalStatus.Connecting -> "Connecting to ${r.name}…" to "Tap to open the terminal."
-                    else -> "Connected to ${r.name}" to "Your shell stays open while you use other apps."
+                    else -> "Connected to ${r.name}" to "$shells ${if (one) "stays" else "stay"} open while you use other apps."
                 }
             }
             else -> "${running.size} computers connected" to running.joinToString { it.name }
@@ -136,7 +138,3 @@ class SessionService : Service() {
         const val ACTION_END_ALL = "io.termbridge.action.END_ALL"
     }
 }
-
-/** A shell is open or being reached; exited and given-up sessions need no service. */
-internal val TerminalStatus.isRunning: Boolean
-    get() = this !is TerminalStatus.Exited && this !is TerminalStatus.Lost

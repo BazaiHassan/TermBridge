@@ -33,8 +33,11 @@ import io.termbridge.feature.devices.devicesScreen
 import io.termbridge.feature.pairing.PairingDestination
 import io.termbridge.feature.pairing.pairingScreen
 import io.termbridge.feature.terminal.TerminalDestination
+import io.termbridge.feature.terminal.TerminalSessions
 import io.termbridge.feature.terminal.terminalScreen
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 
 @HiltAndroidApp
 class TermBridgeApp : Application()
@@ -44,12 +47,14 @@ class MainActivity : ComponentActivity() {
     /** A terminal to open, from the session notification. */
     private val openRequest = MutableStateFlow<TerminalDestination?>(null)
 
+    @Inject lateinit var sessions: TerminalSessions
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) openRequest.value = TerminalDestination.from(intent)
         setContent {
-            TermBridgeTheme { TermBridgeNavHost(openRequest) }
+            TermBridgeTheme { TermBridgeNavHost(openRequest, sessions.running) }
         }
     }
 
@@ -60,7 +65,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?>) {
+private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?>, live: Flow<Set<String>>) {
     val nav = rememberNavController()
     val request by openRequest.collectAsState()
     LaunchedEffect(request) {
@@ -81,6 +86,7 @@ private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?
         popExitTransition = { slideOutHorizontally { it / 6 } + fadeOut() },
     ) {
         devicesScreen(
+            live = live,
             onOpen = { m -> nav.navigate(TerminalDestination(m.agentId, m.name)) },
             onPair = { nav.navigate(PairingDestination) },
         )

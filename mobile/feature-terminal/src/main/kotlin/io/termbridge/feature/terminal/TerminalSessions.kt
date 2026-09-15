@@ -8,9 +8,16 @@ import io.termbridge.core.crypto.MachineStore
 import io.termbridge.core.transport.LanDiscovery
 import io.termbridge.core.transport.NetworkMonitor
 import io.termbridge.core.transport.TermBridgeClient
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,11 +36,22 @@ class TerminalSessions @Inject constructor(
     /** Open sessions by agent ID. */
     val active: StateFlow<Map<String, MachineSession>> = _active.asStateFlow()
 
-    /** The session with [agentId], started if new; one that exited or gave up starts over. */
+    /** Agent IDs with a shell running or being reached. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val running: Flow<Set<String>> = _active
+        .flatMapLatest { open ->
+            if (open.isEmpty()) {
+                flowOf(emptySet())
+            } else {
+                combine(open.values.map { s -> s.state.map { st -> s.agentId.takeIf { st.isRunning } } }) { ids -> ids.filterNotNull().toSet() }
+            }
+        }
+        .distinctUntilChanged()
+
+    /** The session with [agentId], started if new; one whose shells all ended, or that gave up, starts over. */
     fun open(agentId: String, name: String): MachineSession {
         _active.value[agentId]?.let { existing ->
-            val status = existing.state.value.status
-            if (status is TerminalStatus.Exited || status is TerminalStatus.Lost) existing.start()
+            if (!existing.state.value.isRunning) existing.start()
             return existing
         }
         val session = MachineSession(agentId, name, client, machines, discovery, network, onStart = ::keepAlive) { ended ->

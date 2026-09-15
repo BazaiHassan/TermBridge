@@ -47,23 +47,29 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import io.termbridge.core.crypto.PairedMachine
 import io.termbridge.core.ui.components.Pill
+import io.termbridge.core.ui.components.StatusDot
 import io.termbridge.core.ui.components.Wordmark
+import io.termbridge.core.ui.theme.TbPalette
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 
 @Serializable
 data object DevicesDestination
 
-fun NavGraphBuilder.devicesScreen(onOpen: (PairedMachine) -> Unit, onPair: () -> Unit) {
+/** [live]: agent IDs with a shell open right now. */
+fun NavGraphBuilder.devicesScreen(live: Flow<Set<String>>, onOpen: (PairedMachine) -> Unit, onPair: () -> Unit) {
     composable<DevicesDestination> {
         val vm: DevicesViewModel = hiltViewModel()
         val machines by vm.machines.collectAsStateWithLifecycle()
-        DevicesScreen(machines = machines, onOpen = onOpen, onPair = onPair, onForget = vm::forget)
+        val liveIds by live.collectAsStateWithLifecycle(emptySet())
+        DevicesScreen(machines = machines, live = liveIds, onOpen = onOpen, onPair = onPair, onForget = vm::forget)
     }
 }
 
 @Composable
 fun DevicesScreen(
     machines: List<PairedMachine>?,
+    live: Set<String> = emptySet(),
     onOpen: (PairedMachine) -> Unit,
     onPair: () -> Unit,
     onForget: (PairedMachine) -> Unit,
@@ -110,7 +116,7 @@ fun DevicesScreen(
                 machines == null -> Unit
                 machines.isEmpty() -> item { EmptyState(onPair) }
                 else -> items(machines, key = { it.agentId }) { m ->
-                    MachineCard(m, onClick = { onOpen(m) }, onForget = { forgetting = m })
+                    MachineCard(m, live = m.agentId in live, onClick = { onOpen(m) }, onForget = { forgetting = m })
                 }
             }
         }
@@ -134,7 +140,7 @@ fun DevicesScreen(
 }
 
 @Composable
-private fun MachineCard(machine: PairedMachine, onClick: () -> Unit, onForget: () -> Unit) {
+private fun MachineCard(machine: PairedMachine, live: Boolean, onClick: () -> Unit, onForget: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.medium,
@@ -150,7 +156,10 @@ private fun MachineCard(machine: PairedMachine, onClick: () -> Unit, onForget: (
                 Text(machine.name.take(1).uppercase().ifEmpty { ">" }, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                Text(machine.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(machine.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    if (live) Pill("shell open", color = TbPalette.Mint, leading = { StatusDot(TbPalette.Mint, pulsing = true, size = 6.dp) })
+                }
                 Text(
                     machine.addresses.firstOrNull().orEmpty(),
                     style = MaterialTheme.typography.labelMedium,
