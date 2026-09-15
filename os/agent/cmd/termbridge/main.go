@@ -21,6 +21,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	qrcode "github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 
 	"termbridge/agent/internal/agent"
@@ -67,6 +68,7 @@ type serveFlags struct {
 	maxSessions int
 	allowRoot   bool
 	verbose     bool
+	qrPNG       string
 }
 
 func newServeCmd(use, short string, pair bool) *cobra.Command {
@@ -84,6 +86,9 @@ func newServeCmd(use, short string, pair bool) *cobra.Command {
 	fl.IntVar(&f.maxSessions, "max-sessions", session.DefaultMaxSessions, "maximum concurrent shell sessions")
 	fl.BoolVar(&f.allowRoot, "allow-root", false, "allow running as root (dangerous: every paired phone gets a root shell)")
 	fl.BoolVarP(&f.verbose, "verbose", "v", false, "debug logging")
+	if pair {
+		fl.StringVar(&f.qrPNG, "qr-png", "", "also write the QR code as a PNG image to this path (e.g. to show it on another screen)")
+	}
 	return cmd
 }
 
@@ -141,7 +146,7 @@ func serve(ctx context.Context, f serveFlags, pair bool) error {
 		<-done
 		return err
 	}
-	if err := printPairing(status, a, payload); err != nil {
+	if err := printPairing(status, a, payload, f.qrPNG); err != nil {
 		cancel()
 		<-done
 		return err
@@ -162,7 +167,7 @@ func serve(ctx context.Context, f serveFlags, pair bool) error {
 	}
 }
 
-func printPairing(w io.Writer, a *agent.Agent, p pairing.Payload) error {
+func printPairing(w io.Writer, a *agent.Agent, p pairing.Payload, pngPath string) error {
 	data, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -171,9 +176,17 @@ func printPairing(w io.Writer, a *agent.Agent, p pairing.Payload) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "\n  \x1b[1mScan with the TermBridge app\x1b[0m  (Add machine → Scan QR code)\n\n%s\n", indent(qr, "  "))
-	fmt.Fprintf(w, "  Machine      %s\n  Fingerprint  %s\n  Addresses    %s\n  Expires in   %s — the code works once\n\n",
+	fmt.Fprintf(w, "\n  \x1b[1mScan with the TermBridge app\x1b[0m  (Scan QR code)\n\n%s\n", indent(qr, "  "))
+	fmt.Fprintf(w, "  Machine      %s\n  Fingerprint  %s\n  Addresses    %s\n  Expires in   %s — the code works once\n",
 		p.Name, a.Fingerprint(), strings.Join(p.LAN, ", "), pairing.Lifetime)
+	if pngPath != "" {
+		if err := qrcode.WriteFile(string(data), qrcode.Medium, 640, pngPath); err != nil {
+			return fmt.Errorf("write QR image: %w", err)
+		}
+		fmt.Fprintf(w, "  QR image     %s\n", pngPath)
+	}
+	// Same as the desktop app's "Copy code": for the app's "Paste pairing code".
+	fmt.Fprintf(w, "  Paste code   \x1b[2m%s\x1b[0m\n\n", data)
 	return nil
 }
 
