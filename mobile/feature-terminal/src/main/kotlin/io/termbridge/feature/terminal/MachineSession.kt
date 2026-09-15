@@ -70,6 +70,8 @@ class MachineSession internal constructor(
     private val machines: MachineStore,
     private val discovery: LanDiscovery,
     private val network: NetworkMonitor,
+    /** Called whenever the session starts working; keeps [SessionService] up. */
+    private val onStart: () -> Unit,
     private val onDisconnected: (MachineSession) -> Unit,
 ) : SessionListener, TerminalEmulator.Listener {
 
@@ -107,6 +109,7 @@ class MachineSession internal constructor(
 
     /** Starts; after an exit opens a new shell; while waiting to reconnect retries now. */
     fun start() {
+        onStart()
         if (loop?.isActive == true) {
             val conn = connection
             if (_state.value.status is TerminalStatus.Exited && conn != null) scope.launch { attachOrOpen(conn) } else wake.trySend(Unit)

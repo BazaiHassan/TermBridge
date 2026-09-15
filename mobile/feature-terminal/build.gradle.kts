@@ -11,4 +11,5 @@ dependencies {
     implementation(project(":core-transport"))
     implementation(project(":core-crypto"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
 }

@@ -1,5 +1,8 @@
 package io.termbridge.feature.terminal
 
+import android.content.Intent
+import android.os.Bundle
+import androidx.core.os.bundleOf
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,7 +21,21 @@ import javax.inject.Inject
 
 /** Opens a shell on a paired machine, identified by its agent ID. */
 @Serializable
-data class TerminalDestination(val agentId: String, val name: String)
+data class TerminalDestination(val agentId: String, val name: String) {
+    /** For intents that open this terminal, e.g. the session notification. */
+    fun toExtras(): Bundle = bundleOf(EXTRA_AGENT_ID to agentId, EXTRA_NAME to name)
+
+    companion object {
+        private const val EXTRA_AGENT_ID = "io.termbridge.extra.AGENT_ID"
+        private const val EXTRA_NAME = "io.termbridge.extra.NAME"
+
+        /** The terminal an intent asks to open, if any. */
+        fun from(intent: Intent?): TerminalDestination? {
+            val agentId = intent?.getStringExtra(EXTRA_AGENT_ID) ?: return null
+            return TerminalDestination(agentId, intent.getStringExtra(EXTRA_NAME).orEmpty())
+        }
+    }
+}
 
 data class TerminalUiState(
     val title: String,

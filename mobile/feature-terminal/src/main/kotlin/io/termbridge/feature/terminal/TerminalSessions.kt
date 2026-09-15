@@ -1,5 +1,9 @@
 package io.termbridge.feature.terminal
 
+import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.termbridge.core.crypto.MachineStore
 import io.termbridge.core.transport.LanDiscovery
 import io.termbridge.core.transport.NetworkMonitor
@@ -14,6 +18,7 @@ import javax.inject.Singleton
 /** Every open [MachineSession], app-wide: screens come and go, shells stay. Main thread only. */
 @Singleton
 class TerminalSessions @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val client: TermBridgeClient,
     private val machines: MachineStore,
     private val discovery: LanDiscovery,
@@ -31,11 +36,24 @@ class TerminalSessions @Inject constructor(
             if (status is TerminalStatus.Exited || status is TerminalStatus.Lost) existing.start()
             return existing
         }
-        val session = MachineSession(agentId, name, client, machines, discovery, network) { ended ->
+        val session = MachineSession(agentId, name, client, machines, discovery, network, onStart = ::keepAlive) { ended ->
             _active.update { if (it[ended.agentId] === ended) it - ended.agentId else it }
         }
         _active.update { it + (agentId to session) }
         session.start()
         return session
+    }
+
+    /** Ends every shell, e.g. from the notification. */
+    fun endAll() = _active.value.values.toList().forEach { it.disconnect() }
+
+    /** Keeps the process, and with it the shells, alive in the background. */
+    private fun keepAlive() {
+        try {
+            ContextCompat.startForegroundService(context, Intent(context, SessionService::class.java))
+        } catch (e: IllegalStateException) {
+            // Not allowed from the background (Android 12+); sessions start from the UI, and a
+            // running service already covers the rest.
+        }
     }
 }

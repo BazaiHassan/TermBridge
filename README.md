@@ -141,7 +141,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | Security | Noise_IK_25519_ChaChaPoly_BLAKE2s end to end. The agent's key comes from the QR code, so there's no MITM window. One-time 120 s pairing code inside the encrypted handshake. Allowlist in `devices.json`. Instant revocation. The phone's key is sealed by the Android Keystore (StrongBox when available) ([ADR 0005](docs/adr/0005-keys-and-pairing.md)) |
 | Agent | PTY sessions, output coalescing (first byte sent immediately, then a 5 ms window), 4 MiB backpressure, LAN-only bind, live status line, CLI and desktop front ends over one core |
 | Desktop app | QR window that renews its code automatically, paired phones with Revoke, LIVE indicator (tray icon where the desktop has a tray), app-menu launcher ([ADR 0006](docs/adr/0006-desktop-app.md)) |
-| Phone | CameraX + ML Kit scanner (on-device, no Google services needed), fingerprint check, tries every LAN address and keeps the first to answer, custom VT emulator (truecolor, alt screen, 10 000-line scrollback), sticky Ctrl/Alt key row, pinch zoom. Drops (Wi-Fi ↔ mobile data, tunnels) reconnect on their own and re-attach the running shell, replaying what you missed |
+| Phone | CameraX + ML Kit scanner (on-device, no Google services needed), fingerprint check, tries every LAN address and keeps the first to answer, custom VT emulator (truecolor, alt screen, 10 000-line scrollback), sticky Ctrl/Alt key row, pinch zoom. Drops (Wi-Fi ↔ mobile data, tunnels) reconnect on their own and re-attach the running shell, replaying what you missed. An ongoing notification keeps shells open while you use other apps ([ADR 0008](docs/adr/0008-background-sessions.md)) |
 
 ## Roadmap
 
@@ -153,7 +153,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | 3 | Windows ConPTY | stub |
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
 | 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | ✅ |
-| 6 | Shells survive disconnects (15 min, replay), auto-reconnect with re-attach, foreground service, multiple sessions | resume + reconnect ✅, service next |
+| 6 | Shells survive disconnects (15 min, replay), auto-reconnect with re-attach, foreground service, multiple sessions | resume, reconnect, foreground service ✅; multiple sessions next |
 | 7 | Installers, settings | — |
 
 ---

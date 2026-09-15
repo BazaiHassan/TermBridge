@@ -1,6 +1,7 @@
 package io.termbridge.app
 
 import android.app.Application
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
@@ -30,24 +34,43 @@ import io.termbridge.feature.pairing.PairingDestination
 import io.termbridge.feature.pairing.pairingScreen
 import io.termbridge.feature.terminal.TerminalDestination
 import io.termbridge.feature.terminal.terminalScreen
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @HiltAndroidApp
 class TermBridgeApp : Application()
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    /** A terminal to open, from the session notification. */
+    private val openRequest = MutableStateFlow<TerminalDestination?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) openRequest.value = TerminalDestination.from(intent)
         setContent {
-            TermBridgeTheme { TermBridgeNavHost() }
+            TermBridgeTheme { TermBridgeNavHost(openRequest) }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openRequest.value = TerminalDestination.from(intent)
     }
 }
 
 @Composable
-private fun TermBridgeNavHost() {
+private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?>) {
     val nav = rememberNavController()
+    val request by openRequest.collectAsState()
+    LaunchedEffect(request) {
+        val destination = request ?: return@LaunchedEffect
+        nav.navigate(destination) {
+            popUpTo(DevicesDestination)
+            launchSingleTop = true
+        }
+        openRequest.value = null
+    }
     NavHost(
         navController = nav,
         startDestination = DevicesDestination,
