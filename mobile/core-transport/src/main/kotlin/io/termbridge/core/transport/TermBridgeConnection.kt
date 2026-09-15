@@ -73,6 +73,8 @@ class TermBridgeConnection internal constructor(
     @Volatile private var channel: SecureChannel? = null
 
     @Volatile private var awaitingPong = false
+
+    @Volatile private var lastPongAt = Long.MIN_VALUE
     private var missedPongs = 0
     private var dialing: Job? = null
     private var keepalive: Job? = null
@@ -102,7 +104,7 @@ class TermBridgeConnection internal constructor(
         }
         handshakeTimeout = scope.launch(dispatcher) {
             delay(HANDSHAKE_TIMEOUT_MS)
-            if (_state.value == ConnectionState.Connecting) fail(explainFailures(timedOut = true))
+            if (_state.value == ConnectionState.Connecting) fail(explainFailures(timedOut = true), retryableFailure())
         }
     }
 
@@ -146,6 +148,44 @@ class TermBridgeConnection internal constructor(
             }
         }
         return pending.result.await()
+    }
+
+    private val pendingAttaches = ConcurrentHashMap<Int, Pair<CompletableDeferred<RemoteSession>, RemoteSession>>()
+
+    /**
+     * Re-attaches session [id], which survived a disconnect on the computer (PROTOCOL.md §4.8),
+     * at [cols]×[rows]. Output missed while away is replayed to [listener] first. Throws
+     * [RemoteException] with `unknown_session` when the session is gone, or
+     * `unsupported_opcode` when the computer cannot resume sessions.
+     */
+    suspend fun attachSession(id: Int, cols: Int, rows: Int, listener: SessionListener): RemoteSession {
+        if (_state.value !is ConnectionState.Connected) throw IOException("Not connected")
+        val session = RemoteSession(id, this, listener)
+        val done = CompletableDeferred<RemoteSession>()
+        pendingAttaches[id] = done to session
+        sessions[id] = session // the replay follows SESSION_ATTACHED at once and must find its listener
+        if (!send(Message.SessionAttach(id, cols, rows))) failAttach(id, IOException("Connection is closing"))
+        return done.await()
+    }
+
+    private fun failAttach(id: Int, cause: Exception) {
+        pendingAttaches.remove(id)?.first?.completeExceptionally(cause) ?: return
+        sessions.remove(id)
+    }
+
+    /**
+     * Checks the link now instead of at the next keepalive: sends a PING and fails the connection
+     * unless a PONG arrives within [timeoutMs]. Call it when the phone's network changed, since
+     * the old path may be dead without any error surfacing for a minute.
+     */
+    fun probe(timeoutMs: Long = PROBE_TIMEOUT_MS) {
+        if (_state.value !is ConnectionState.Connected) return
+        val sent = clock()
+        if (!send(Message.Ping(sent))) return
+        scope.launch(dispatcher) {
+            delay(timeoutMs)
+            if (lastPongAt < sent && _state.value is ConnectionState.Connected) fail("$machineName stopped responding")
+        }
     }
 
     /** Closes the connection; open sessions end with [SessionListener.onClosed]. */
@@ -196,7 +236,7 @@ class TermBridgeConnection internal constructor(
         if (channel.endpoint.direct) directFailures.incrementAndGet()
         val all = allEndpoints
         if (directFailures.get() >= all.count { it.direct }) directExhausted.complete(Unit)
-        if (this.channel == null && failures.size >= all.size) fail(explainFailures(timedOut = false))
+        if (this.channel == null && failures.size >= all.size) fail(explainFailures(timedOut = false), retryableFailure())
     }
 
     private val directFailures = java.util.concurrent.atomic.AtomicInteger()
@@ -222,11 +262,13 @@ class TermBridgeConnection internal constructor(
                 sessions[message.newSession] = session
                 open.result.complete(session)
             }
+            is Message.SessionAttached -> pendingAttaches.remove(message.session)?.let { (done, session) -> done.complete(session) }
             is Message.SessionExit -> sessions.remove(message.session)?.listener?.onExit(message.exitCode)
             is Message.SessionClose -> sessions.remove(message.session)?.listener?.onClosed()
             is Message.Pong -> {
                 awaitingPong = false
-                _rttMillis.value = clock() - message.timestamp
+                lastPongAt = clock()
+                _rttMillis.value = lastPongAt - message.timestamp
             }
             is Message.Ping -> send(Message.Pong(message.timestamp))
             is Message.Error -> handleError(message)
@@ -236,7 +278,11 @@ class TermBridgeConnection internal constructor(
 
     private fun handleError(error: Message.Error) {
         when {
-            _state.value == ConnectionState.Connecting -> fail("The agent refused the connection: ${error.message}")
+            _state.value == ConnectionState.Connecting -> fail("The agent refused the connection: ${error.message}", retryable = false)
+            error.code == ErrorCodes.UNKNOWN_SESSION -> failAttach(error.session, RemoteException(error.code, error.message))
+            error.code == ErrorCodes.UNSUPPORTED_OPCODE && pendingAttaches.isNotEmpty() ->
+                // An older agent: it cannot resume sessions, the caller opens a new one.
+                pendingAttaches.keys.toList().forEach { failAttach(it, RemoteException(error.code, error.message)) }
             error.session == Protocol.CONTROL_SESSION &&
                 error.code in setOf(ErrorCodes.SESSION_OPEN_FAILED, ErrorCodes.TOO_MANY_SESSIONS, ErrorCodes.BAD_FRAME) ->
                 pendingOpens.poll()?.result?.completeExceptionally(RemoteException(error.code, error.message))
@@ -282,9 +328,14 @@ class TermBridgeConnection internal constructor(
         }
     }
 
-    private fun fail(reason: String) {
+    /** Retrying can help unless the computer rejected this phone or speaks another protocol. */
+    private fun retryableFailure(): Boolean = failures.none {
+        it.kind == SecureChannel.FailureKind.REJECTED || it.kind == SecureChannel.FailureKind.PROTOCOL
+    }
+
+    private fun fail(reason: String, retryable: Boolean = true) {
         attempts.forEach { it.cancel() }
-        finish(ConnectionState.Failed(reason))
+        finish(ConnectionState.Failed(reason, retryable))
     }
 
     private fun finish(terminal: ConnectionState) {
@@ -299,6 +350,7 @@ class TermBridgeConnection internal constructor(
             val open = pendingOpens.poll() ?: break
             open.result.completeExceptionally(IOException(terminal.toString()))
         }
+        pendingAttaches.keys.toList().forEach { failAttach(it, IOException(terminal.toString())) }
     }
 
     private companion object {
@@ -307,6 +359,7 @@ class TermBridgeConnection internal constructor(
         const val HANDSHAKE_TIMEOUT_MS = 10_000L
         const val KEEPALIVE_INTERVAL_MS = 15_000L
         const val MAX_MISSED_PONGS = 3
+        const val PROBE_TIMEOUT_MS = 4_000L
     }
 }
 

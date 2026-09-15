@@ -308,6 +308,65 @@ class TermBridgeConnectionTest {
     }
 
     @Test
+    fun reattachReplaysMissedOutput() = runTest {
+        val h = Harness(this)
+        runCurrent()
+        h.connect()
+        val rec = Recorder()
+        val attached = async { h.conn.attachSession(5, 100, 30, rec) }
+        runCurrent()
+        assertEquals(Message.SessionAttach(5, 100, 30), h.socket.received.filterIsInstance<Message.SessionAttach>().single())
+        h.socket.deliver(Message.SessionAttached(5))
+        h.socket.deliver(Message.Data(5, "missed while away".encodeToByteArray()))
+        assertEquals(5, attached.await().id)
+        assertEquals("missed while away", rec.output.toString())
+    }
+
+    @Test
+    fun attachToVanishedSessionFails() = runTest {
+        val h = Harness(this)
+        runCurrent()
+        h.connect()
+        val result = async { runCatching { h.conn.attachSession(5, 80, 24, Recorder()) } }
+        runCurrent()
+        h.socket.deliver(Message.Error(5, ErrorCodes.UNKNOWN_SESSION, "session 5 is gone"))
+        assertEquals(ErrorCodes.UNKNOWN_SESSION, assertIs<RemoteException>(result.await().exceptionOrNull()).code)
+    }
+
+    @Test
+    fun rejectionIsNotRetryableButUnreachableIs() = runTest {
+        val rejected = Harness(this, trusted = false)
+        runCurrent()
+        rejected.socket.open()
+        assertEquals(false, assertIs<ConnectionState.Failed>(rejected.conn.state.value).retryable)
+        val unreachable = Harness(this)
+        runCurrent()
+        unreachable.socket.listener.onFailure(unreachable.socket, ConnectException("refused"), null)
+        assertEquals(true, assertIs<ConnectionState.Failed>(unreachable.conn.state.value).retryable)
+    }
+
+    @Test
+    fun probeDropsADeadLinkWithinSeconds() = runTest {
+        val h = Harness(this)
+        runCurrent()
+        h.connect()
+        h.conn.probe()
+        runCurrent()
+        val ping = h.socket.received.filterIsInstance<Message.Ping>().last()
+        h.socket.deliver(Message.Pong(ping.timestamp))
+        advanceTimeBy(5_000)
+        assertIs<ConnectionState.Connected>(h.conn.state.value)
+        h.conn.probe() // the network changed and nothing answers any more
+        advanceTimeBy(5_000)
+        assertTrue(assertIs<ConnectionState.Failed>(h.conn.state.value).retryable)
+    }
+
+    @Test
+    fun reconnectBackoffDoublesUpToThirtySeconds() {
+        assertEquals(listOf(1_000L, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000), (1..7).map(::reconnectDelayMillis))
+    }
+
+    @Test
     fun endpointParsingAndUrls() {
         assertEquals(Endpoint.Direct("192.168.1.20", 7423), Endpoint.parse("192.168.1.20:7423"))
         assertEquals("ws://[fd00::1]:7423/v1", Endpoint.Direct("fd00::1").url)

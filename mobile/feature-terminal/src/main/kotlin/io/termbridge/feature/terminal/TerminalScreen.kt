@@ -84,7 +84,9 @@ private fun TerminalScreen(vm: TerminalViewModel, onBack: () -> Unit) {
             },
         )
         Box(Modifier.fillMaxWidth().height(2.dp)) {
-            if (ui.status == TerminalStatus.Connecting) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (ui.status == TerminalStatus.Connecting || ui.status is TerminalStatus.Reconnecting) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             AndroidView(
@@ -139,7 +141,7 @@ private fun TopBar(ui: TerminalUiState, onBack: () -> Unit, onPaste: () -> Unit,
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Paste") }, onClick = { menu = false; onPaste() })
-                DropdownMenuItem(text = { Text("Disconnect") }, onClick = { menu = false; onDisconnect() })
+                DropdownMenuItem(text = { Text("End session") }, onClick = { menu = false; onDisconnect() })
             }
         }
     }
@@ -150,6 +152,7 @@ private fun StatusPill(ui: TerminalUiState) {
     val (color, label, live) = when (val s = ui.status) {
         TerminalStatus.Connecting -> Triple(TbPalette.Amber, "connecting", true)
         is TerminalStatus.Live -> Triple(TbPalette.Mint, ui.rttMillis?.let { "$it ms" } ?: "live", true)
+        is TerminalStatus.Reconnecting -> Triple(TbPalette.Amber, "reconnecting", true)
         is TerminalStatus.Exited -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "exit ${s.exitCode}", false)
         is TerminalStatus.Lost -> Triple(TbPalette.Coral, "offline", false)
     }
@@ -160,6 +163,7 @@ private fun StatusPill(ui: TerminalUiState) {
 private fun StatusCard(status: TerminalStatus, onRestart: () -> Unit, modifier: Modifier = Modifier) {
     val content: Triple<String, String, String>? = when (status) {
         is TerminalStatus.Exited -> Triple("Shell exited", "Exit code ${status.exitCode}", "New session")
+        is TerminalStatus.Reconnecting -> Triple("Reconnecting… your shell is still running", status.reason, "Retry now")
         is TerminalStatus.Lost -> Triple("Connection lost", status.reason, "Reconnect")
         else -> null
     }

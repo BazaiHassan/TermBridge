@@ -1,5 +1,6 @@
 package io.termbridge.core.transport
 
+import io.termbridge.core.proto.ErrorCodes
 import io.termbridge.core.proto.Protocol
 import java.util.Base64
 
@@ -72,7 +73,11 @@ data class AgentInfo(
 sealed interface ConnectionState {
     data object Connecting : ConnectionState
     data class Connected(val agent: AgentInfo) : ConnectionState
-    data class Failed(val reason: String) : ConnectionState
+    /**
+     * [retryable] is false when trying again cannot help (this phone is not recognized, the
+     * computer speaks another protocol); an auto-reconnect loop must stop then.
+     */
+    data class Failed(val reason: String, val retryable: Boolean = true) : ConnectionState
     data class Closed(val reason: String) : ConnectionState
 
     val isTerminal: Boolean get() = this is Failed || this is Closed
@@ -89,4 +94,7 @@ interface SessionListener {
 }
 
 /** The agent refused a request (PROTOCOL.md §3.2). */
-class RemoteException(val code: String, message: String) : Exception(message)
+class RemoteException(val code: String, message: String) : Exception(message) {
+    /** The session to re-attach ended, or the resume window passed (PROTOCOL.md §4.8). */
+    val isUnknownSession: Boolean get() = code == ErrorCodes.UNKNOWN_SESSION
+}
