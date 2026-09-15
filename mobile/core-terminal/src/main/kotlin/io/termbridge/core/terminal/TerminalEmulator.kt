@@ -88,6 +88,10 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
 
     override fun print(codePoint: Int) {
         val cp = if (lineDrawing && codePoint in 0x5F..0x7E) DEC_GRAPHICS[codePoint - 0x5F].code else codePoint
+        if (cp >= 0x300 && CharWidth.of(cp) == 0) {
+            attachMark(cp)
+            return
+        }
         if (pendingWrap) {
             if (autowrap) {
                 screen[cursorRow].wrapped = true
@@ -96,12 +100,37 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
             }
             pendingWrap = false
         }
-        val line = screen[cursorRow]
-        line.text[cursorCol] = cp
-        line.styles[cursorCol] = style
+        val width = CharWidth.of(cp)
+        if (width == 2 && cursorCol == cols - 1) { // no room for both halves
+            if (cols < 2) return
+            if (autowrap) {
+                screen[cursorRow].wrapped = true
+                cursorCol = 0
+                index()
+            } else {
+                cursorCol = cols - 2
+            }
+        }
+        screen[cursorRow].put(cursorCol, cp, style, wide = width == 2)
         dirty[cursorRow] = true
         lastPrinted = cp
-        if (cursorCol < cols - 1) cursorCol++ else pendingWrap = true
+        val next = cursorCol + width
+        if (next < cols) {
+            cursorCol = next
+        } else {
+            cursorCol = cols - 1
+            pendingWrap = true
+        }
+    }
+
+    /** A zero-width code point joins the character before the cursor. */
+    private fun attachMark(cp: Int) {
+        val line = screen[cursorRow]
+        var col = if (pendingWrap) cursorCol else cursorCol - 1
+        if (col >= 0 && line.text[col] == TerminalLine.WIDE_TAIL) col--
+        if (col < 0 || line.text[col] == 0) return
+        line.addMark(col, cp)
+        dirty[cursorRow] = true
     }
 
     override fun execute(control: Int) {

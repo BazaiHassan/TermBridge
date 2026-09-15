@@ -150,7 +150,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 |---|---|---|
 | 0 | Monorepo, protocol, codecs | ✅ |
 | 1 | LAN proof of concept | ✅ |
-| 2 | Full emulator: wide chars, mouse, reflow, selection, recorded `vim`/`htop` replays | partly done |
+| 2 | Full emulator: wide chars, mouse, reflow, selection, recorded `vim`/`htop` replays | wide chars (CJK, emoji) and combining marks ✅; mouse, reflow, selection, replays next |
 | 3 | Windows ConPTY | ✅ agent (Windows 10 1809+, tested in CI); Windows desktop app with phase 7 |
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
 | 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | ✅ |

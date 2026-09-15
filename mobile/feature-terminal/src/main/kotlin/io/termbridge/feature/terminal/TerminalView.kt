@@ -235,11 +235,11 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         // ASCII runs are drawn in one call (the font is monospaced); anything else is placed
         // cell by cell so fallback-font glyphs cannot push the rest of the row off the grid.
         val text = line.text
-        var ascii = true
+        var ascii = !line.hasMarks
         var blank = true
         for (i in start until end) {
             val cp = text[i]
-            if (cp > 0x7E) ascii = false
+            if (cp > 0x7E || cp < 0) ascii = false // non-ASCII, or the right half of a wide character
             if (cp > 0x20) blank = false
         }
         if (blank && !textPaint.isUnderlineText && !textPaint.isStrikeThruText) return
@@ -250,10 +250,31 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
             canvas.drawText(charBuf, 0, len, start * cellWidth, baseline, textPaint)
         } else {
             for (i in start until end) {
-                val cp = if (text[i] == 0) ' '.code else text[i]
-                val len = Character.toChars(cp, charBuf, 0)
-                canvas.drawText(charBuf, 0, len, i * cellWidth, baseline, textPaint)
+                val cp = text[i]
+                if (cp == TerminalLine.WIDE_TAIL) continue // drawn with its left half
+                var len = Character.toChars(if (cp == 0) ' '.code else cp, charBuf, 0)
+                line.marks(i)?.let { m ->
+                    if (charBuf.size < len + m.length) charBuf = charBuf.copyOf(len + m.length + 16)
+                    m.toCharArray(charBuf, len)
+                    len += m.length
+                }
+                val cells = if (i + 1 < line.cols && text[i + 1] == TerminalLine.WIDE_TAIL) 2 else 1
+                drawGlyph(canvas, len, i * cellWidth, cells)
             }
+        }
+    }
+
+    /** Draws charBuf[0, len) into [cells] cells from [x]: centered, squeezed when the glyph is wider. */
+    private fun drawGlyph(canvas: Canvas, len: Int, x: Float, cells: Int) {
+        val slot = cells * cellWidth
+        val width = textPaint.measureText(charBuf, 0, len)
+        if (width <= slot + 0.5f) {
+            canvas.drawText(charBuf, 0, len, x + (slot - width) / 2, baseline, textPaint)
+        } else {
+            val scale = textPaint.textScaleX
+            textPaint.textScaleX = scale * slot / width
+            canvas.drawText(charBuf, 0, len, x, baseline, textPaint)
+            textPaint.textScaleX = scale
         }
     }
 
@@ -261,9 +282,12 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         val x = padding + emu.cursorCol * cellWidth
         val y = padding + emu.cursorRow * cellHeight
         fillPaint.color = palette.cursor
+        val line = emu.line(emu.cursorRow)
+        val wide = emu.cursorCol + 1 < line.cols && line.text[emu.cursorCol + 1] == TerminalLine.WIDE_TAIL
+        val w = if (wide) 2 * cellWidth else cellWidth
         if (hasFocus()) {
-            canvas.drawRect(x, y, x + cellWidth, y + cellHeight, fillPaint)
-            val cp = emu.line(emu.cursorRow).text[emu.cursorCol]
+            canvas.drawRect(x, y, x + w, y + cellHeight, fillPaint)
+            val cp = line.text[emu.cursorCol]
             if (cp > 0x20) {
                 textPaint.color = palette.background
                 textPaint.isFakeBoldText = false
@@ -274,7 +298,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
                 canvas.drawText(charBuf, 0, len, x, y + baseline, textPaint)
             }
         } else {
-            canvas.drawRect(x, y + cellHeight - dp(2f), x + cellWidth, y + cellHeight, fillPaint)
+            canvas.drawRect(x, y + cellHeight - dp(2f), x + w, y + cellHeight, fillPaint)
         }
     }
 
