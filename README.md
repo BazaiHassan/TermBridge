@@ -56,6 +56,22 @@ make build
 ./bin/termbridge run                  # every later start
 ```
 
+**Linux packages.** Releases also carry `.deb` and `.rpm` packages:
+
+| Package | Contents |
+|---|---|
+| `termbridge` (amd64, arm64) | the CLI as `/usr/bin/termbridge`, and a systemd user unit |
+| `termbridge-desktop` (amd64) | the desktop app, with an applications-menu entry and icon |
+
+```sh
+sudo apt install ./termbridge_*_amd64.deb     # Debian, Ubuntu
+sudo dnf install ./termbridge-*.x86_64.rpm    # Fedora, RHEL (zypper on openSUSE)
+```
+
+Installing needs root; running never does. As your normal user, run `termbridge pair`. To serve phones
+from every login, add `systemctl --user enable --now termbridge` (or `termbridge autostart on`).
+Build the packages yourself with `make packages` in `os/` (needs [nfpm](https://nfpm.goreleaser.com)).
+
 ### 2. On the phone
 
 Install the app, tap **Scan QR code**, and point the camera at the code. Before you tap **Pair**,

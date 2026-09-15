@@ -1,5 +1,6 @@
 # Go
 /os/bin/
+/os/dist/
 *.test
 *.out
 

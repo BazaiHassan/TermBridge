@@ -1,0 +1,27 @@
+# The CLI agent as .deb/.rpm, built from os/ by `make packages` or the release workflow. They set
+# ARCH and VERSION, and stage the binary at bin/pkg/termbridge (nfpm expands ${…} in fields such
+# as version and arch, but not in file paths).
+name: termbridge
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+section: net
+priority: optional
+maintainer: TermBridge <termbridge@users.noreply.github.com>
+description: |-
+  Reach this computer's terminal from your phone.
+  End-to-end encrypted (Noise IK). Pair once by scanning a QR code; run it as your
+  own user, never as root.
+homepage: https://github.com/BazaiHassan/TermBridge
+contents:
+  - src: bin/pkg/termbridge
+    dst: /usr/bin/termbridge
+    file_info:
+      mode: 0755
+  - src: packaging/termbridge.service
+    dst: /usr/lib/systemd/user/termbridge.service
+    file_info:
+      mode: 0644
+scripts:
+  postinstall: packaging/scripts/cli-postinstall.sh

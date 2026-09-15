@@ -25,7 +25,7 @@ DESKTOP_TAGS ?= desktop
 
 RELAY := ./relay/cmd/relay
 
-.PHONY: all build relay desktop install-desktop cross test race vet lint run clean
+.PHONY: all build relay desktop install-desktop cross packages test race vet lint run clean
 
 all: vet test build
 
@@ -51,6 +51,31 @@ cross:
 	GOOS=darwin  GOARCH=arm64 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/termbridge-darwin-arm64 $(AGENT)
 	GOOS=windows GOARCH=amd64 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/termbridge-windows-amd64.exe $(AGENT)
 
+# Linux packages in dist/: termbridge (.deb, .rpm; amd64 and arm64: the CLI and a systemd user
+# unit) and termbridge-desktop (.deb, .rpm; this machine's architecture). Needs nfpm:
+#   go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+NFPM        ?= $(or $(shell command -v nfpm 2>/dev/null),$(wildcard $(HOME)/go/bin/nfpm))
+# Package versions must start with a digit: a bare commit hash (CI's shallow clone) becomes 0.0.0-dev+<hash>.
+# (The case patterns use the "(pattern)" form: a bare ")" would end $(shell …) early.)
+PKG_VERSION := $(shell v='$(patsubst v%,%,$(VERSION))'; case "$$v" in ([0-9]*) echo "$$v";; (*) echo "0.0.0-dev+$$v";; esac)
+HOST_ARCH   := $(shell $(GO) env GOARCH)
+
+packages: desktop
+	@test -n "$(NFPM)" || { echo "nfpm not found: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"; exit 1; }
+	mkdir -p dist $(BIN)/pkg
+	cp $(BIN)/termbridge-desktop $(BIN)/pkg/termbridge-desktop
+	$(BIN)/termbridge-desktop --write-icon $(BIN)/pkg/io.termbridge.desktop.png
+	for arch in amd64 arm64; do \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/pkg/termbridge $(AGENT) || exit 1; \
+		for fmt in deb rpm; do \
+			ARCH=$$arch VERSION=$(PKG_VERSION) $(NFPM) pkg -f packaging/nfpm-cli.yaml -p $$fmt -t dist/ || exit 1; \
+		done; \
+	done
+	for fmt in deb rpm; do \
+		ARCH=$(HOST_ARCH) VERSION=$(PKG_VERSION) $(NFPM) pkg -f packaging/nfpm-desktop.yaml -p $$fmt -t dist/ || exit 1; \
+	done
+	ls -la dist
+
 test:
 	$(GO) test ./...
 
@@ -67,4 +92,4 @@ run: build
 	./$(BIN)/termbridge run --insecure-dev
 
 clean:
-	rm -rf $(BIN)
+	rm -rf $(BIN) dist

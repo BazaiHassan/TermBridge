@@ -145,6 +145,50 @@ jobs:
           name: desktop-windows-amd64
           path: os/dist/*
 
+  linux-packages:
+    name: Linux packages (.deb, .rpm)
+    needs: [cli, desktop-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{cli-linux-*,desktop-linux-*}"
+          path: os/bin/pkg
+          merge-multiple: true
+      - name: Desktop app runtime libraries (it draws the package icon)
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libwayland-client0 libwayland-cursor0 libwayland-egl1 libxkbcommon0
+      - name: Package
+        working-directory: os
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          nfpm="$(go env GOPATH)/bin/nfpm"
+          v="${GITHUB_REF_NAME#v}"
+          d=bin/pkg
+          chmod +x "$d"/*
+          # The nfpm configs read fixed paths under bin/pkg (see os/packaging/).
+          cp "$d/termbridge-desktop-${GITHUB_REF_NAME}-linux-amd64" "$d/termbridge-desktop"
+          "$d/termbridge-desktop" --write-icon "$d/io.termbridge.desktop.png"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            cp "$d/termbridge-${GITHUB_REF_NAME}-linux-$arch" "$d/termbridge"
+            for fmt in deb rpm; do
+              ARCH=$arch VERSION=$v "$nfpm" pkg -f packaging/nfpm-cli.yaml -p $fmt -t dist/
+            done
+          done
+          for fmt in deb rpm; do
+            ARCH=amd64 VERSION=$v "$nfpm" pkg -f packaging/nfpm-desktop.yaml -p $fmt -t dist/
+          done
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: os/dist/*
+
   android:
     name: Android APKs
     runs-on: ubuntu-latest
@@ -196,7 +240,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [cli, relay, desktop-linux, desktop-macos, desktop-windows, android]
+    needs: [cli, relay, desktop-linux, desktop-macos, desktop-windows, linux-packages, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -218,6 +262,7 @@ jobs:
             **Computer:** download one of:
             - `termbridge-desktop-…`: the desktop app (`.exe` on Windows). Run it and scan the QR code it shows.
             - `termbridge-…`: the CLI. Run `chmod +x termbridge-* && ./termbridge-* pair`, or `termbridge-….exe pair` on Windows.
+            - Linux packages: `termbridge_…deb` / `termbridge-…rpm` (the CLI and a systemd user unit; amd64 and arm64) and `termbridge-desktop…` (the desktop app with a menu entry; amd64). Install with `sudo apt install ./<file>.deb` or `sudo dnf install ./<file>.rpm`, then run TermBridge as your normal user.
 
             On macOS, allow the unsigned binary once: `xattr -d com.apple.quarantine <file>`.
             On Windows (10 version 1809 or later), SmartScreen warns about the unsigned app: choose **More info → Run anyway**.

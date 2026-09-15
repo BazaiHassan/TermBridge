@@ -1,0 +1,14 @@
+# Per-user service shipped by the termbridge package. Pair a phone first with
+# `termbridge pair`, then: systemctl --user enable --now termbridge
+# It runs as you, never as root: every paired phone gets your shell.
+[Unit]
+Description=TermBridge: reach this computer's terminal from your phone
+Documentation=https://github.com/BazaiHassan/TermBridge
+
+[Service]
+ExecStart=/usr/bin/termbridge run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

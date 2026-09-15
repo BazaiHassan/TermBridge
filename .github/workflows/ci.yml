@@ -76,6 +76,11 @@ jobs:
           make desktop > build.log 2>&1 || { cat build.log; echo "::error title=make desktop::$(tail -c 3000 build.log | tr '\n' ' ')"; exit 1; }
       - name: Window snapshots
         run: xvfb-run -a go test -tags desktop -count=1 ./agent/cmd/termbridge-desktop/
+      - name: Linux packages
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          make packages NFPM="$(go env GOPATH)/bin/nfpm"
+          for f in dist/*.deb; do dpkg-deb --info "$f" > /dev/null; done
 
   android:
     name: Android app

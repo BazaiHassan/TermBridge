@@ -30,6 +30,13 @@ var version = "0.1.0-dev"
 const appID = "io.termbridge.desktop"
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--write-icon" { // packaging: the icon is drawn in code
+		if err := os.WriteFile(os.Args[2], iconIdle.Content(), 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, "termbridge-desktop:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--install-launcher" {
 		if err := installLauncher(); err != nil {
 			fmt.Fprintln(os.Stderr, "termbridge-desktop:", err)
@@ -139,7 +146,7 @@ Comment=Reach this computer's terminal from your phone
 Exec=%q
 Icon=%s
 Terminal=false
-Categories=Utility;Network;RemoteAccess;
+Categories=Network;RemoteAccess;
 Keywords=terminal;shell;remote;phone;qr;
 `, exe, appID)
 	if err := os.WriteFile(entryPath, []byte(entry), 0o644); err != nil {

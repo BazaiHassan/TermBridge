@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=TermBridge
+GenericName=Phone terminal access
+Comment=Reach this computer's terminal from your phone
+Exec=/usr/bin/termbridge-desktop
+Icon=io.termbridge.desktop
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=terminal;shell;remote;phone;qr;
