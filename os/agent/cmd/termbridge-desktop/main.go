@@ -20,6 +20,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"termbridge/agent/internal/agent"
+	"termbridge/agent/internal/autostart"
 	"termbridge/agent/internal/store"
 )
 
@@ -87,6 +88,18 @@ func run(a fyne.App) error {
 	cancel() // hang up every session before the process exits
 	<-done
 	return nil
+}
+
+// desktopEntry is this app as a login item.
+func desktopEntry() (autostart.Entry, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return autostart.Entry{}, err
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return autostart.Entry{ID: appID, Name: "TermBridge", Exe: exe, Kind: autostart.GUI}, nil
 }
 
 // installLauncher adds TermBridge to the desktop's application menu (Linux,

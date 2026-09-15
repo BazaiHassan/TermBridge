@@ -57,7 +57,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newServeCmd("pair", "Show a QR code, pair a phone, then keep serving", true),
 		newServeCmd("run", "Serve paired phones", false),
-		newStatusCmd(), newRelayCmd(), newRevokeCmd(), newResetCmd(), newVersionCmd(),
+		newStatusCmd(), newRelayCmd(), newAutostartCmd(), newRevokeCmd(), newResetCmd(), newVersionCmd(),
 	)
 	return root
 }

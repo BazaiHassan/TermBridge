@@ -78,6 +78,7 @@ cd mobile
 | `termbridge revoke <name>` | Unpairs a phone. A running agent disconnects it within 1 s |
 | `termbridge reset` | Deletes the identity and every pairing |
 | `termbridge relay [url\|off]` | Shows, sets or turns off the relay used when the phone isn't on the same network |
+| `termbridge autostart [on\|off]` | Starts serving at login: systemd user unit (or XDG autostart) on Linux, LaunchAgent on macOS, Run key on Windows. Flags after `on` go to `run`; no argument shows the state |
 
 Flags for `run` and `pair`: `--port` (default 7423), `--listen`, `--shell`, `--max-sessions`,
 `--lan-only` (local network only, no relay), `-v`.
@@ -154,7 +155,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
 | 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | ✅ |
 | 6 | Shells survive disconnects (15 min, replay), auto-reconnect with re-attach, foreground service, multiple sessions | ✅ |
-| 7 | Installers, settings | — |
+| 7 | Installers, settings | start at login ✅ (CLI and desktop app); settings next |
 
 ---
 

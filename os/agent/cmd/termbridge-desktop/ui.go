@@ -22,6 +22,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"termbridge/agent/internal/agent"
+	"termbridge/agent/internal/autostart"
 	"termbridge/agent/internal/pairing"
 	"termbridge/agent/internal/store"
 	"termbridge/agent/internal/transport"
@@ -43,16 +44,17 @@ type ui struct {
 	header   *fyne.Container
 	pairArea *fyne.Container
 
-	status   *canvas.Text
-	statusBg *canvas.Rectangle
-	qr       *canvas.Image
-	timer    *canvas.Text
-	pairCard *fyne.Container
-	pairBtn  *widget.Button
-	notice   *canvas.Text
-	list     *widget.List
-	empty    *canvas.Text
-	footer   *canvas.Text
+	status    *canvas.Text
+	statusBg  *canvas.Rectangle
+	qr        *canvas.Image
+	timer     *canvas.Text
+	pairCard  *fyne.Container
+	pairBtn   *widget.Button
+	notice    *canvas.Text
+	list      *widget.List
+	empty     *canvas.Text
+	footer    *canvas.Text
+	autostart *widget.Check // start at login
 
 	listening, relay string // footer parts
 
@@ -156,10 +158,35 @@ func (u *ui) layout() fyne.CanvasObject {
 	u.empty.Alignment = fyne.TextAlignCenter
 	devicesTitle := text("PAIRED PHONES", colMuted, 11, true)
 	u.footer = text("starting…", colMuted, 11, false)
+	u.autostart = widget.NewCheck("Start when I log in", nil)
+	if e, err := desktopEntry(); err == nil {
+		u.autostart.SetChecked(autostart.Enabled(e))
+	}
+	u.autostart.OnChanged = u.setAutostart
 
 	top := container.NewVBox(u.header, identity, widget.NewSeparator(), u.pairArea, widget.NewSeparator(), devicesTitle)
-	body := container.NewBorder(top, u.footer, nil, nil, container.NewStack(u.list, container.NewCenter(u.empty)))
+	bottom := container.NewBorder(nil, nil, nil, u.autostart, container.NewCenter(u.footer))
+	body := container.NewBorder(top, bottom, nil, nil, container.NewStack(u.list, container.NewCenter(u.empty)))
 	return container.New(layout.NewCustomPaddedLayout(18, 14, 20, 20), body)
+}
+
+// setAutostart adds this app to, or removes it from, the login items. On
+// failure the box flips back and the error is shown.
+func (u *ui) setAutostart(on bool) {
+	e, err := desktopEntry()
+	if err == nil {
+		if on {
+			_, err = autostart.Enable(e)
+		} else {
+			err = autostart.Disable(e)
+		}
+	}
+	if err != nil {
+		u.autostart.OnChanged = nil
+		u.autostart.SetChecked(!on)
+		u.autostart.OnChanged = u.setAutostart
+		dialog.ShowError(err, u.w)
+	}
 }
 
 // ---- Pairing ------------------------------------------------------------------------
