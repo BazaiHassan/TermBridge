@@ -236,3 +236,69 @@ must reproduce it exactly.
 5. Later connections send an empty payload, and the agent accepts only paired
    keys. After `termbridge revoke <name>`, a running agent drops that phone's
    connections within 1 s.
+6. **Optional QR fields:** `relay` (the relay's URL, e.g.
+   `wss://relay.example.com`) and `wan` (public `host:port` addresses the agent
+   has verified as reachable).
+
+## 9. Relay
+
+The relay connects a phone to an agent when no direct path exists, for example
+when the laptop sits behind NAT. It is **blind**: it only copies Noise
+ciphertext (§1.2) and holds no key. Each deployment is operated by its owner;
+there is no shared public relay.
+
+### 9.1 Endpoints
+
+| URL | Subprotocol | Used by |
+|---|---|---|
+| `wss://<relay>/agent` | `termbridge.relay.v1` | agent: control channel (JSON text messages) |
+| `wss://<relay>/agent/accept?token=<t>` | `termbridge.v1` | agent: one data channel per phone session |
+| `wss://<relay>/client?agent=<id>` | `termbridge.v1` | phone: one connection per session |
+
+`<id>` is the agent ID encoded as base64url without padding (`+/` → `-_`).
+
+### 9.2 Agent control channel
+
+```
+relay → agent  {"type":"challenge","nonce":"<base64, 32 bytes>"}
+agent → relay  {"type":"hello","agent_id":"<base64 Ed25519 public key>","sig":"<base64>","version":"…"}
+               sig = Ed25519(identity, "TermBridge relay auth v1\n" ‖ nonce)
+relay → agent  {"type":"ready","observed_ip":"91.109.105.133"}
+relay → agent  {"type":"incoming","token":"<base64url, 16 bytes>"}     one per phone session
+agent → relay  {"type":"probe","port":7423}                            is observed_ip:port reachable?
+relay → agent  {"type":"probe_result","port":7423,"reachable":true}
+```
+
+- An invalid signature closes the connection with code 4001. A second control
+  channel for the same agent replaces the first.
+- The relay sends a WebSocket ping every 30 s. Either side treats a failed ping
+  as a dead connection. The agent reconnects with exponential backoff, from
+  1 s up to 60 s.
+
+### 9.3 Sessions
+
+1. The phone opens `/client?agent=<id>`. If the agent is not connected, the relay
+   closes with **4004** ("agent offline").
+2. The relay sends `incoming` with a fresh token. The agent opens
+   `/agent/accept?token=<t>` within 10 s, otherwise the relay closes the phone's
+   connection with **4008**.
+3. The relay then **copies every binary message 1:1 in both directions**, keeping
+   message boundaries. The phone runs the ordinary Noise handshake (§1.2) and the
+   frame protocol through it, exactly as on the LAN.
+4. **Limits per agent:** 5 concurrent sessions (the 6th is closed with **4029**) and
+   10 Mbit/s of relayed traffic, both directions combined.
+5. **Logging:** connection metadata only (agent fingerprint, client IP, byte
+   counts, duration). Never message content.
+
+### 9.4 Address hints and dial order
+
+- `HELLO_ACK` gains an optional field `"addrs":{"lan":[…],"wan":[…]}` with the
+  agent's current addresses. The phone stores them, so the next connection can
+  go direct even after the agent's IP changed.
+- **Dial order on the phone:**
+  1. LAN addresses, one every 250 ms.
+  2. `wan` addresses.
+  3. The relay, 750 ms after the first attempt, or immediately once every direct
+     attempt has failed.
+
+  The first handshake to complete wins, and the phone closes the others.

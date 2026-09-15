@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -79,19 +80,38 @@ class TermBridgeConnection internal constructor(
 
     internal fun start() {
         require(endpoints.isNotEmpty()) { "no address to connect to" }
+        val direct = endpoints.filter { it.direct }
+        val relayed = endpoints.filterNot { it.direct }
         dialing = scope.launch(dispatcher) {
-            endpoints.forEachIndexed { i, endpoint ->
-                if (i > 0) delay(ATTEMPT_STAGGER_MS)
-                if (channel != null || finished.get()) return@launch
-                SecureChannel(endpoint, agentStatic, device, handshakePayload, channelEvents).also {
-                    attempts += it
-                    it.start(openSocket)
+            launch {
+                direct.forEachIndexed { i, endpoint ->
+                    if (i > 0) delay(ATTEMPT_STAGGER_MS)
+                    if (channel != null || finished.get()) return@launch
+                    dial(endpoint)
+                }
+            }
+            if (relayed.isNotEmpty()) {
+                launch {
+                    // PROTOCOL.md §9.4: the relay joins after 750 ms, or at once when every
+                    // direct path has already failed.
+                    if (direct.isNotEmpty()) withTimeoutOrNull(RELAY_DELAY_MS) { directExhausted.await() }
+                    if (channel != null || finished.get()) return@launch
+                    relayed.forEach(::dial)
                 }
             }
         }
         handshakeTimeout = scope.launch(dispatcher) {
             delay(HANDSHAKE_TIMEOUT_MS)
             if (_state.value == ConnectionState.Connecting) fail(explainFailures(timedOut = true))
+        }
+    }
+
+    private val directExhausted = CompletableDeferred<Unit>()
+
+    private fun dial(endpoint: Endpoint) {
+        SecureChannel(endpoint, agentStatic, device, handshakePayload, channelEvents).also {
+            attempts += it
+            it.start(openSocket)
         }
     }
 
@@ -127,7 +147,7 @@ class TermBridgeConnection internal constructor(
     private val channelEvents = object : SecureChannel.Events {
         override fun onEstablished(channel: SecureChannel) = established(channel)
         override fun onFrame(channel: SecureChannel, frame: ByteArray) = received(channel, frame)
-        override fun onFailed(channel: SecureChannel, failure: SecureChannel.Failure) = attemptFailed(failure)
+        override fun onFailed(channel: SecureChannel, failure: SecureChannel.Failure) = attemptFailed(channel, failure)
         override fun onClosed(channel: SecureChannel, reason: String, error: Boolean) = channelClosed(channel, reason, error)
     }
 
@@ -155,10 +175,14 @@ class TermBridgeConnection internal constructor(
         handle(message)
     }
 
-    private fun attemptFailed(failure: SecureChannel.Failure) {
+    private fun attemptFailed(channel: SecureChannel, failure: SecureChannel.Failure) {
         failures += failure
+        if (channel.endpoint.direct) directFailures.incrementAndGet()
+        if (directFailures.get() >= endpoints.count { it.direct }) directExhausted.complete(Unit)
         if (this.channel == null && failures.size >= endpoints.size) fail(explainFailures(timedOut = false))
     }
+
+    private val directFailures = java.util.concurrent.atomic.AtomicInteger()
 
     private fun channelClosed(channel: SecureChannel, reason: String, error: Boolean) {
         if (channel === this.channel) finish(if (error) ConnectionState.Failed(reason) else ConnectionState.Closed(reason))
@@ -171,7 +195,9 @@ class TermBridgeConnection internal constructor(
             is Message.Data -> sessions[message.session]?.listener?.onOutput(message.bytes, message.offset, message.length)
             is Message.HelloAck -> {
                 handshakeTimeout?.cancel()
-                _state.value = ConnectionState.Connected(AgentInfo(message.agent, message.os, message.hostname))
+                _state.value = ConnectionState.Connected(
+                    AgentInfo(message.agent, message.os, message.hostname, message.lanAddrs, message.wanAddrs),
+                )
                 startKeepalive()
             }
             is Message.SessionOpened -> pendingOpens.poll()?.let { open ->
@@ -225,6 +251,8 @@ class TermBridgeConnection internal constructor(
                 } else {
                     "$machineName doesn't recognize this phone. It may have been revoked or reset; pair again."
                 }
+            failures.any { it.kind == SecureChannel.FailureKind.OFFLINE } ->
+                "$machineName is offline: TermBridge isn't running there, or it can't reach the relay. Start it on the computer and try again."
             failures.any { it.kind == SecureChannel.FailureKind.PROTOCOL } -> failures.first { it.kind == SecureChannel.FailureKind.PROTOCOL }.detail
             else -> buildString {
                 append(if (timedOut) "Timed out reaching " else "Can't reach ")
@@ -232,6 +260,7 @@ class TermBridgeConnection internal constructor(
                 append(" at ")
                 append(endpoints.joinToString())
                 append(". Make sure both are on the same Wi-Fi, the agent is running, and no VPN on the phone captures local traffic.")
+                if (endpoints.none { !it.direct }) append(" To connect from other networks, set up a relay (termbridge relay <url>) and pair again.")
             }
         }
     }
@@ -257,6 +286,7 @@ class TermBridgeConnection internal constructor(
 
     private companion object {
         const val ATTEMPT_STAGGER_MS = 250L
+        const val RELAY_DELAY_MS = 750L
         const val HANDSHAKE_TIMEOUT_MS = 10_000L
         const val KEEPALIVE_INTERVAL_MS = 15_000L
         const val MAX_MISSED_PONGS = 3

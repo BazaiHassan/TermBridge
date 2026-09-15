@@ -49,6 +49,34 @@ jobs:
           name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: os/dist/*
 
+  relay:
+    name: Relay linux/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: Build
+        working-directory: os
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
+            -o "dist/termbridge-relay-${GITHUB_REF_NAME}-linux-${GOARCH}" ./relay/cmd/relay
+          if [ "$GOARCH" = amd64 ]; then cp relay/deploy/termbridge-relay.service relay/deploy/Caddyfile dist/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-linux-${{ matrix.goarch }}
+          path: os/dist/*
+
   desktop-linux:
     name: Desktop app linux/amd64
     runs-on: ubuntu-latest
@@ -142,7 +170,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [cli, desktop-linux, desktop-macos, android]
+    needs: [cli, relay, desktop-linux, desktop-macos, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

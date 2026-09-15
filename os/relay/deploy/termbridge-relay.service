@@ -1,0 +1,32 @@
+# systemd unit for the TermBridge relay. Install:
+#   sudo install -m755 termbridge-relay-linux-amd64 /usr/local/bin/termbridge-relay
+#   sudo install -m644 termbridge-relay.service /etc/systemd/system/
+#   sudo systemctl enable --now termbridge-relay
+[Unit]
+Description=TermBridge relay (blind forwarder of end-to-end encrypted sessions)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/termbridge-relay --listen 127.0.0.1:8080 --trust-proxy
+Restart=on-failure
+RestartSec=2
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+MemoryMax=256M
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

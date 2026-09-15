@@ -74,13 +74,20 @@ class TermBridgeConnectionTest {
         fun deliver(m: Message) = listener.onMessage(this, transport!!.encrypt(MessageCodec.encode(m)).toByteString())
     }
 
-    private class Harness(scope: TestScope, addresses: Int = 1, payload: ByteArray = HandshakePayload.CONNECT, trusted: Boolean = true) {
+    private class Harness(
+        scope: TestScope,
+        addresses: Int = 1,
+        payload: ByteArray = HandshakePayload.CONNECT,
+        trusted: Boolean = true,
+        relay: Boolean = false,
+    ) {
         val agent = X25519.generate()
         val phone = X25519.generate()
         val sockets = mutableListOf<FakeAgent>()
         val conn = TermBridgeConnection(
             machineName = "box",
-            endpoints = (1..addresses).map { Endpoint("192.168.1.$it") },
+            endpoints = (1..addresses).map { Endpoint.Direct("192.168.1.$it") } +
+                listOfNotNull(if (relay) Endpoint.Relay("wss://relay.example.com", AGENT_ID) else null),
             agentStatic = agent.public,
             device = phone,
             handshakePayload = payload,
@@ -167,7 +174,7 @@ class TermBridgeConnectionTest {
         h.sockets[1].open()
         h.sockets[1].deliver(Message.HelloAck(1, "a", "linux", "box"))
         assertIs<ConnectionState.Connected>(h.conn.state.value)
-        assertEquals("192.168.1.2", h.conn.endpoint?.host)
+        assertEquals("192.168.1.2:7423", h.conn.endpoint?.label)
         assertTrue(h.sockets[0].cancelled)
     }
 
@@ -247,8 +254,57 @@ class TermBridgeConnectionTest {
     }
 
     @Test
+    fun relayJoinsAtOnceWhenDirectPathFails() = runTest {
+        val h = Harness(this, relay = true)
+        runCurrent()
+        h.sockets[0].listener.onFailure(h.sockets[0], ConnectException("refused"), null)
+        runCurrent()
+        assertEquals(2, h.sockets.size) // no 750 ms wait once every direct path failed
+        // OkHttp keeps wss:// URLs as https://; the socket itself is still WebSocket over TLS.
+        val url = h.sockets[1].request().url
+        assertEquals("relay.example.com" to "/client", url.host to url.encodedPath)
+        assertTrue(url.isHttps)
+        h.sockets[1].open()
+        h.sockets[1].deliver(Message.HelloAck(1, "a", "linux", "box", listOf("192.168.1.9:7423"), listOf("91.1.2.3:7423")))
+        val connected = assertIs<ConnectionState.Connected>(h.conn.state.value)
+        assertEquals(listOf("91.1.2.3:7423"), connected.agent.wanAddrs)
+        assertEquals(false, h.conn.endpoint?.direct)
+    }
+
+    @Test
+    fun relayJoinsAfterDelayWhenDirectPathIsSilent() = runTest {
+        val h = Harness(this, relay = true)
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+        advanceTimeBy(751)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+    }
+
+    @Test
+    fun offlineAgentBehindRelayIsExplained() = runTest {
+        val h = Harness(this, addresses = 1, relay = true)
+        runCurrent()
+        h.sockets[0].listener.onFailure(h.sockets[0], ConnectException("refused"), null)
+        runCurrent()
+        h.sockets[1].listener.onClosed(h.sockets[1], 4004, "agent offline")
+        val state = assertIs<ConnectionState.Failed>(h.conn.state.value)
+        assertTrue("offline" in state.reason, state.reason)
+    }
+
+    @Test
     fun endpointParsingAndUrls() {
-        assertEquals(Endpoint("192.168.1.20", 7423), Endpoint.parse("192.168.1.20:7423"))
-        assertEquals("ws://[fd00::1]:7423/v1", Endpoint("fd00::1").url)
+        assertEquals(Endpoint.Direct("192.168.1.20", 7423), Endpoint.parse("192.168.1.20:7423"))
+        assertEquals("ws://[fd00::1]:7423/v1", Endpoint.Direct("fd00::1").url)
+        val relay = Endpoint.Relay("wss://relay.example.com/", "lA4j9t8H4NGr6QAKRnKFSiYHy97mMEF8MO5NlBB9c3I=")
+        assertEquals("wss://relay.example.com/client?agent=lA4j9t8H4NGr6QAKRnKFSiYHy97mMEF8MO5NlBB9c3I", relay.url)
+        assertEquals(
+            listOf("192.168.1.2:7423", "91.1.2.3:7423", "relay relay.example.com"),
+            Endpoint.all(listOf("192.168.1.2:7423"), listOf("91.1.2.3:7423"), "wss://relay.example.com", AGENT_ID).map { it.label },
+        )
+    }
+
+    private companion object {
+        const val AGENT_ID = "lA4j9t8H4NGr6QAKRnKFSiYHy97mMEF8MO5NlBB9c3I="
     }
 }

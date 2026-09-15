@@ -54,7 +54,15 @@ sealed interface Message {
         override val session: Int get() = Protocol.CONTROL_SESSION
     }
 
-    data class HelloAck(val version: Int, val agent: String, val os: String, val hostname: String) : Message {
+    /** [lanAddrs] / [wanAddrs]: the agent's current addresses (PROTOCOL.md §9.4). */
+    data class HelloAck(
+        val version: Int,
+        val agent: String,
+        val os: String,
+        val hostname: String,
+        val lanAddrs: List<String> = emptyList(),
+        val wanAddrs: List<String> = emptyList(),
+    ) : Message {
         override val session: Int get() = Protocol.CONTROL_SESSION
     }
 

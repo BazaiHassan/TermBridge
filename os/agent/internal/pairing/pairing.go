@@ -30,7 +30,8 @@ type Payload struct {
 	Name    string   `json:"name"`
 	Code    string   `json:"code"`
 	LAN     []string `json:"lan"`
-	Relay   string   `json:"relay,omitempty"`
+	WAN     []string `json:"wan,omitempty"`   // public addresses verified reachable
+	Relay   string   `json:"relay,omitempty"` // relay base URL (PROTOCOL.md §9)
 }
 
 // Window is a single-use pairing code with an expiry. Safe for concurrent use.

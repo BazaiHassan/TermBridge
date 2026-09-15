@@ -13,6 +13,9 @@ data class PairingQr(
     val name: String = "",
     val code: String,
     val lan: List<String> = emptyList(),
+    /** Public addresses the agent verified as reachable (port forward). */
+    val wan: List<String> = emptyList(),
+    /** Relay base URL (PROTOCOL.md §9), used when no direct path works. */
     val relay: String? = null,
 ) {
     companion object {
@@ -32,8 +35,11 @@ data class PairingQr(
             require(qr.agentId.length in 40..48) { "Pairing code has an invalid agent ID" }
             require(qr.code.isNotBlank()) { "Pairing code has no one-time code" }
             require(qr.lan.isNotEmpty() || qr.relay != null) { "The computer reported no network address" }
-            require(qr.lan.all { hostPort.matches(it) && it.substringAfterLast(':').toInt() in 1..65535 }) {
+            require((qr.lan + qr.wan).all { hostPort.matches(it) && it.substringAfterLast(':').toInt() in 1..65535 }) {
                 "Pairing code has an invalid address"
+            }
+            require(qr.relay == null || qr.relay.startsWith("wss://") || qr.relay.startsWith("ws://")) {
+                "Pairing code has an invalid relay address"
             }
             qr.copy(name = qr.name.take(64).ifBlank { "Computer" })
         }

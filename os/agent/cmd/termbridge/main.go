@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
@@ -56,7 +57,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newServeCmd("pair", "Show a QR code, pair a phone, then keep serving", true),
 		newServeCmd("run", "Serve paired phones", false),
-		newStatusCmd(), newRevokeCmd(), newResetCmd(), newVersionCmd(),
+		newStatusCmd(), newRelayCmd(), newRevokeCmd(), newResetCmd(), newVersionCmd(),
 	)
 	return root
 }
@@ -68,6 +69,7 @@ type serveFlags struct {
 	maxSessions int
 	allowRoot   bool
 	verbose     bool
+	lanOnly     bool
 	qrPNG       string
 }
 
@@ -86,6 +88,7 @@ func newServeCmd(use, short string, pair bool) *cobra.Command {
 	fl.IntVar(&f.maxSessions, "max-sessions", session.DefaultMaxSessions, "maximum concurrent shell sessions")
 	fl.BoolVar(&f.allowRoot, "allow-root", false, "allow running as root (dangerous: every paired phone gets a root shell)")
 	fl.BoolVarP(&f.verbose, "verbose", "v", false, "debug logging")
+	fl.BoolVar(&f.lanOnly, "lan-only", false, "only accept phones on the local network and do not use the relay")
 	if pair {
 		fl.StringVar(&f.qrPNG, "qr-png", "", "also write the QR code as a PNG image to this path (e.g. to show it on another screen)")
 	}
@@ -121,9 +124,13 @@ func serve(ctx context.Context, f serveFlags, pair bool) error {
 	}
 	log := slog.New(slog.NewTextHandler(status, &slog.HandlerOptions{Level: level}))
 	events := &cliEvents{Line: status, paired: make(chan store.Device, 1)}
+	cfg, err := st.Config()
+	if err != nil {
+		return err
+	}
 	a, err := agent.New(agent.Config{
 		Store: st, Listen: f.listen, Port: f.port, Shell: f.shell, MaxSessions: f.maxSessions,
-		Version: version, Logger: log, Events: events,
+		Version: version, Logger: log, Events: events, Relay: cfg.Relay, LANOnly: f.lanOnly,
 	})
 	if err != nil {
 		return err
@@ -223,7 +230,15 @@ func newStatusCmd() *cobra.Command {
 				c.Close()
 				running = "running on port " + strconv.Itoa(port)
 			}
-			fmt.Fprintf(out, "Agent        %s\nFingerprint  %s\nConfig       %s\n\n", running, identity.Fingerprint(priv.Public().(ed25519.PublicKey)), st.Dir())
+			cfg, err := st.Config()
+			if err != nil {
+				return err
+			}
+			relay := "off (termbridge relay <url> to enable)"
+			if cfg.Relay != "" {
+				relay = cfg.Relay
+			}
+			fmt.Fprintf(out, "Agent        %s\nFingerprint  %s\nRelay        %s\nConfig       %s\n\n", running, identity.Fingerprint(priv.Public().(ed25519.PublicKey)), relay, st.Dir())
 			devices, err := st.Devices()
 			if err != nil {
 				return err
@@ -242,6 +257,48 @@ func newStatusCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&port, "port", transport.DefaultPort, "LAN port to probe")
 	return cmd
+}
+
+func newRelayCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "relay [url|off]",
+		Short: "Show, set or disable the relay used when phones are not on the same network",
+		Long: "The relay (docs/PROTOCOL.md §9) lets phones reach this computer from any network.\n" +
+			"It only forwards end-to-end encrypted bytes. Run your own with termbridge-relay.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := openStore()
+			if err != nil {
+				return err
+			}
+			cfg, err := st.Config()
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if len(args) == 0 {
+				if cfg.Relay == "" {
+					fmt.Fprintln(out, "relay: off")
+				} else {
+					fmt.Fprintln(out, "relay:", cfg.Relay)
+				}
+				return nil
+			}
+			switch v := strings.TrimSpace(args[0]); {
+			case v == "off":
+				cfg.Relay = ""
+			case strings.HasPrefix(v, "wss://"), strings.HasPrefix(v, "ws://"), strings.HasPrefix(v, "https://"):
+				cfg.Relay = strings.TrimRight(strings.Replace(v, "https://", "wss://", 1), "/")
+			default:
+				return fmt.Errorf("relay URL must start with wss:// (or ws:// for testing), got %q", v)
+			}
+			if err := st.SaveConfig(cfg); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "relay: %s\nRestart the agent to apply; phones learn the relay when they pair.\n", cmp.Or(cfg.Relay, "off"))
+			return nil
+		},
+	}
 }
 
 func newRevokeCmd() *cobra.Command {

@@ -23,12 +23,18 @@ DESKTOP := ./agent/cmd/termbridge-desktop
 # Wayland-only build without the X11 headers: make desktop DESKTOP_TAGS="desktop wayland"
 DESKTOP_TAGS ?= desktop
 
-.PHONY: all build desktop install-desktop cross test race vet lint run clean
+RELAY := ./relay/cmd/relay
+
+.PHONY: all build relay desktop install-desktop cross test race vet lint run clean
 
 all: vet test build
 
 build:
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/termbridge $(AGENT)
+
+# The relay for a VPS (see relay/deploy/): static, no cgo.
+relay:
+	CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/termbridge-relay $(RELAY)
 
 desktop:
 	CGO_ENABLED=1 $(GO) build -tags '$(DESKTOP_TAGS)' -trimpath -ldflags '$(LDFLAGS)' -o $(BIN)/termbridge-desktop $(DESKTOP)

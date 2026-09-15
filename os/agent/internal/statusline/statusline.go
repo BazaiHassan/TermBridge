@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"termbridge/agent/internal/transport"
 )
 
 // Line is the indicator. When the output is not a terminal it only passes
@@ -22,6 +24,7 @@ type Line struct {
 	tty       bool
 	drawn     bool
 	listening string
+	relay     string
 	peers     map[string]int // connected peer → open sessions
 }
 
@@ -66,6 +69,20 @@ func (l *Line) SessionClosed(peer string, _ uint8) {
 	l.update(func() {
 		if l.peers[peer] > 0 {
 			l.peers[peer]--
+		}
+	})
+}
+
+// RelayChanged shows the relay state while the agent is idle.
+func (l *Line) RelayChanged(s transport.RelayStatus) {
+	l.update(func() {
+		switch {
+		case s.Connected && s.Reachable:
+			l.relay = "relay ✓ · direct ✓"
+		case s.Connected:
+			l.relay = "relay ✓"
+		default:
+			l.relay = "relay ✗"
 		}
 	})
 }
@@ -121,7 +138,11 @@ func (l *Line) render() string {
 	case len(l.peers) > 0:
 		return fmt.Sprintf("\x1b[30;43m ● CONNECTED \x1b[0m %s · no shell open", who)
 	default:
-		return fmt.Sprintf("\x1b[2m○ waiting for devices on %s\x1b[0m", l.listening)
+		relay := ""
+		if l.relay != "" {
+			relay = " · " + l.relay
+		}
+		return fmt.Sprintf("\x1b[2m○ waiting for devices on %s%s\x1b[0m", l.listening, relay)
 	}
 }
 

@@ -4,9 +4,10 @@ Your computer's shell on your phone. Start the app on the computer, scan the QR 
 phone, and you're in. No port forwarding, no SSH keys to manage, no screen frames: only terminal
 bytes travel, end-to-end encrypted, so typing feels local (target: < 50 ms echo on a LAN).
 
-> **Status: phases 0, 1 and 4 are implemented.** That covers the protocol, the terminal, pairing
-> and end-to-end encryption. None of it has been tested on a real phone yet. The relay for use
-> outside the LAN arrives in phase 5.
+> **Status: phases 0, 1 and 4 are implemented, and phase 5 partly.** That covers the protocol, the
+> terminal, pairing, end-to-end encryption, and connecting from other networks through a
+> self-hosted blind relay or a port forward. mDNS discovery (the rest of phase 5) comes next.
+> None of it has been tested on a real phone yet.
 
 ```
 termbridge/
@@ -76,8 +77,38 @@ cd mobile
 | `termbridge status` | Shows the fingerprint, whether the agent is running, and paired phones with when each was last seen |
 | `termbridge revoke <name>` | Unpairs a phone. A running agent disconnects it within 1 s |
 | `termbridge reset` | Deletes the identity and every pairing |
+| `termbridge relay [url\|off]` | Shows, sets or turns off the relay used when the phone isn't on the same network |
 
-Flags for `run` and `pair`: `--port` (default 7423), `--listen`, `--shell`, `--max-sessions`, `-v`.
+Flags for `run` and `pair`: `--port` (default 7423), `--listen`, `--shell`, `--max-sessions`,
+`--lan-only` (local network only, no relay), `-v`.
+
+### 3. From anywhere (optional)
+
+On the same Wi-Fi everything works out of the box. For other networks, such as mobile data or
+another house, the phone tries these in order and the first to answer wins (PROTOCOL.md §9):
+
+1. **Direct over the internet.** If you forward TCP port 7423 on your router to this computer, the
+   agent checks through the relay that the port is really reachable and tells the phone. The phone
+   then connects straight to your public IP, with nothing in between.
+2. **Your own relay.** It's for when no direct path exists, for example behind carrier-grade NAT.
+   The relay only ever sees end-to-end encrypted bytes and holds no key. Tests prove it.
+
+To set up a relay on a VPS (any small Linux server with a domain name pointing at it):
+
+```bash
+# on the VPS: binary from Releases (termbridge-relay-…-linux-amd64), or `make relay` in os/
+sudo install -m755 termbridge-relay-*-linux-amd64 /usr/local/bin/termbridge-relay
+sudo install -m644 termbridge-relay.service /etc/systemd/system/
+sudo systemctl enable --now termbridge-relay
+# Caddy provides TLS: put the Caddyfile (with your domain) in /etc/caddy/ and reload Caddy
+
+# on the computer
+termbridge relay wss://relay.example.com
+termbridge pair          # pair again, so the phone learns the relay
+```
+
+After that the phone reaches the computer from any network. The computer keeps an outgoing
+connection to the relay, so no port has to be opened at home.
 
 ### "Can't reach …" on the phone
 
@@ -121,7 +152,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | 2 | Full emulator: wide chars, mouse, reflow, selection, recorded `vim`/`htop` replays | partly done |
 | 3 | Windows ConPTY | stub |
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
-| 5 | mDNS discovery, relay for outside the LAN | — |
+| 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | relay + direct ✅, mDNS next |
 | 6 | Auto-reconnect, foreground service, multiple sessions | — |
 | 7 | Installers, settings | — |
 

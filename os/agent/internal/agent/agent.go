@@ -9,11 +9,14 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/netip"
 	"os"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +42,7 @@ type Events interface {
 	link.Events
 	Listening(addrs []string)
 	Paired(d store.Device)
+	RelayChanged(s transport.RelayStatus)
 }
 
 // Config configures an Agent.
@@ -51,6 +55,11 @@ type Config struct {
 	Version     string
 	Logger      *slog.Logger
 	Events      Events // optional
+	// Relay is the relay base URL (PROTOCOL.md §9); empty disables it.
+	Relay string
+	// LANOnly accepts peers from the local network only and disables the
+	// relay. Otherwise any peer may try; only paired keys get past Noise.
+	LANOnly bool
 }
 
 // Agent is a configured, not yet running agent.
@@ -58,6 +67,7 @@ type Agent struct {
 	cfg      Config
 	log      *slog.Logger
 	events   Events
+	identity ed25519.PrivateKey
 	edPub    ed25519.PublicKey
 	static   noise.DHKey
 	sessions *session.Manager
@@ -66,6 +76,7 @@ type Agent struct {
 	mu     sync.Mutex
 	window *pairing.Window
 	conns  map[*liveConn]struct{}
+	wan    []string // public addresses the relay verified as reachable
 }
 
 type liveConn struct {
@@ -95,6 +106,7 @@ func New(cfg Config) (*Agent, error) {
 		cfg:      cfg,
 		log:      cfg.Logger,
 		events:   cfg.Events,
+		identity: priv,
 		edPub:    priv.Public().(ed25519.PublicKey),
 		static:   noise.DHKey{Private: sk, Public: pk},
 		hostname: cmp.Or(hostname, "computer"),
@@ -136,7 +148,11 @@ func (a *Agent) StartPairing() (pairing.Payload, *pairing.Window, error) {
 	a.mu.Lock()
 	a.window = w
 	a.mu.Unlock()
-	return pairing.Payload{V: 1, AgentID: a.AgentID(), Name: a.hostname, Code: w.Code(), LAN: lan}, w, nil
+	relay := a.cfg.Relay
+	if a.cfg.LANOnly {
+		relay = ""
+	}
+	return pairing.Payload{V: 1, AgentID: a.AgentID(), Name: a.hostname, Code: w.Code(), LAN: lan, WAN: a.wanAddrs(), Relay: relay}, w, nil
 }
 
 // StopPairing closes the pairing window.
@@ -164,12 +180,17 @@ func (a *Agent) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	allow := func(netip.Addr) bool { return true } // Noise authenticates every peer (ADR 0007)
+	if a.cfg.LANOnly {
+		allow = transport.IsLAN
+	}
 	srv, err := transport.Listen(transport.ServerConfig{
 		Addrs:     addrs,
 		Static:    a.static,
 		Authorize: a.authorize,
 		Handler:   a.handle,
 		Logger:    a.log,
+		AllowPeer: allow,
 	})
 	if err != nil {
 		return err
@@ -182,7 +203,54 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.log.Info("agent ready", "addresses", len(bound), "fingerprint", a.Fingerprint())
 	a.events.Listening(bound)
 	go a.watchRevocations(ctx)
-	return srv.Serve(ctx)
+	var relay sync.WaitGroup
+	if a.cfg.Relay != "" && !a.cfg.LANOnly {
+		relay.Add(1)
+		go func() {
+			defer relay.Done()
+			transport.RunRelay(ctx, transport.RelayConfig{
+				URL:       a.cfg.Relay,
+				Identity:  a.identity,
+				Static:    a.static,
+				Authorize: a.authorize,
+				Handler:   a.handle,
+				ProbePort: a.cfg.Port,
+				Version:   a.cfg.Version,
+				Logger:    a.log,
+				OnStatus:  a.relayChanged,
+			})
+		}()
+	}
+	err = srv.Serve(ctx)
+	relay.Wait()
+	return err
+}
+
+// relayChanged records the public address once the relay confirms it is
+// reachable directly (a port forward on the router), so phones can skip the
+// relay next time.
+func (a *Agent) relayChanged(s transport.RelayStatus) {
+	a.mu.Lock()
+	if s.Connected {
+		a.wan = nil
+		if s.Reachable && s.ObservedIP != "" {
+			a.wan = []string{net.JoinHostPort(s.ObservedIP, strconv.Itoa(a.cfg.Port))}
+		}
+	}
+	a.mu.Unlock()
+	a.events.RelayChanged(s)
+}
+
+func (a *Agent) wanAddrs() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.wan)
+}
+
+// addrs are this agent's current addresses for HELLO_ACK (PROTOCOL.md §9.4).
+func (a *Agent) addrs() *proto.Addrs {
+	lan, _ := transport.PhoneAddrs(a.cfg.Port)
+	return &proto.Addrs{LAN: lan, WAN: a.wanAddrs()}
 }
 
 func (a *Agent) authorize(key, payload []byte) (transport.Peer, bool) {
@@ -234,6 +302,7 @@ func (a *Agent) handle(ctx context.Context, c transport.Conn, peer transport.Pee
 			Agent:    "termbridge-agent/" + cmp.Or(a.cfg.Version, "dev"),
 			OS:       runtime.GOOS,
 			Hostname: a.hostname,
+			Addrs:    a.addrs(),
 		},
 		PeerName: peer.Name,
 		Logger:   a.log,
@@ -294,11 +363,10 @@ func cleanName(s string) string {
 
 type nopEvents struct{}
 
-func (nopEvents) PeerConnected(string)        {}
-func (nopEvents) PeerDisconnected(string)     {}
-func (nopEvents) SessionOpened(string, uint8) {}
-func (nopEvents) SessionClosed(string, uint8) {}
-func (nopEvents) Listening([]string)          {}
-func (nopEvents) Paired(store.Device)         {}
-
-var _ = fmt.Sprintf // keep fmt for future error wrapping helpers
+func (nopEvents) PeerConnected(string)               {}
+func (nopEvents) PeerDisconnected(string)            {}
+func (nopEvents) SessionOpened(string, uint8)        {}
+func (nopEvents) SessionClosed(string, uint8)        {}
+func (nopEvents) Listening([]string)                 {}
+func (nopEvents) Paired(store.Device)                {}
+func (nopEvents) RelayChanged(transport.RelayStatus) {}

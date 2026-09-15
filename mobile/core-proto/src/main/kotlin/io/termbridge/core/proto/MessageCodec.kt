@@ -44,7 +44,10 @@ object MessageCodec {
             Opcode.HELLO_ACK,
             Protocol.CONTROL_SESSION,
             HelloAckJson.serializer(),
-            HelloAckJson(message.version, message.agent, message.os, message.hostname),
+            HelloAckJson(
+                message.version, message.agent, message.os, message.hostname,
+                addrs = if (message.lanAddrs.isEmpty() && message.wanAddrs.isEmpty()) null else AddrsJson(message.lanAddrs, message.wanAddrs),
+            ),
         )
         is Message.Error -> json(
             Opcode.ERROR,
@@ -85,7 +88,7 @@ object MessageCodec {
             Opcode.PONG -> Message.Pong(buf.long)
             Opcode.HELLO -> parse(frame, HelloJson.serializer()).let { Message.Hello(it.v, it.client) }
             Opcode.HELLO_ACK -> parse(frame, HelloAckJson.serializer()).let {
-                Message.HelloAck(it.v, it.agent, it.os, it.hostname)
+                Message.HelloAck(it.v, it.agent, it.os, it.hostname, it.addrs?.lan.orEmpty(), it.addrs?.wan.orEmpty())
             }
             Opcode.ERROR -> parse(frame, ErrorJson.serializer()).let { Message.Error(sid, it.code, it.msg) }
         }
@@ -117,7 +120,16 @@ object MessageCodec {
 private data class HelloJson(val v: Int, val client: String = "")
 
 @Serializable
-private data class HelloAckJson(val v: Int, val agent: String = "", val os: String = "", val hostname: String = "")
+private data class HelloAckJson(
+    val v: Int,
+    val agent: String = "",
+    val os: String = "",
+    val hostname: String = "",
+    val addrs: AddrsJson? = null,
+)
+
+@Serializable
+private data class AddrsJson(val lan: List<String> = emptyList(), val wan: List<String> = emptyList())
 
 @Serializable
 private data class SessionOpenJson(val shell: String = "", val cwd: String = "", val cols: Int = 0, val rows: Int = 0)

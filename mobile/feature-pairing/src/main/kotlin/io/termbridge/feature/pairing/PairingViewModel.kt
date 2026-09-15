@@ -70,21 +70,24 @@ class PairingViewModel @Inject constructor(
                     ConnectTarget(
                         name = qr.name,
                         agentId = qr.agentId,
-                        endpoints = qr.lan.map(Endpoint::parse),
+                        endpoints = Endpoint.all(qr.lan, qr.wan, qr.relay, qr.agentId),
                         handshakePayload = HandshakePayload.pair(qr.code, confirm.deviceName.ifBlank { defaultDeviceName() }),
                     ),
                     scope = viewModelScope,
                 )
                 when (val result = connection.state.first { it is ConnectionState.Connected || it.isTerminal }) {
                     is ConnectionState.Connected -> {
-                        val winner = connection.endpoint?.toString()
+                        val winner = (connection.endpoint as? Endpoint.Direct)?.label
                         val now = System.currentTimeMillis()
+                        val lan = result.agent.lanAddrs.ifEmpty { qr.lan }
                         val machine = PairedMachine(
                             agentId = qr.agentId,
                             name = qr.name,
-                            addresses = listOfNotNull(winner) + qr.lan.filter { it != winner },
+                            addresses = listOfNotNull(winner?.takeIf { it in lan }) + lan.filter { it != winner },
                             pairedAt = now,
                             lastConnectedAt = now,
+                            wan = result.agent.wanAddrs.ifEmpty { qr.wan },
+                            relay = qr.relay,
                         )
                         machines.upsert(machine)
                         connection.close()

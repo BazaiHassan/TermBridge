@@ -109,7 +109,10 @@ class TerminalViewModel @Inject constructor(
             }
             _ui.update { it.copy(endpoint = machine.addresses.firstOrNull().orEmpty()) }
             val conn = try {
-                client.connect(ConnectTarget(machine.name, machine.agentId, machine.addresses.map(Endpoint::parse)), viewModelScope)
+                client.connect(
+                    ConnectTarget(machine.name, machine.agentId, Endpoint.all(machine.addresses, machine.wan, machine.relay, machine.agentId)),
+                    viewModelScope,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -121,9 +124,13 @@ class TerminalViewModel @Inject constructor(
             conn.state.collect { state ->
                 when (state) {
                     is ConnectionState.Connected -> {
-                        val via = conn.endpoint?.toString()
-                        _ui.update { it.copy(endpoint = via.orEmpty()) }
-                        machines.markConnected(route.agentId, via)
+                        _ui.update { it.copy(endpoint = conn.endpoint?.label.orEmpty()) }
+                        machines.markConnected(
+                            route.agentId,
+                            via = (conn.endpoint as? Endpoint.Direct)?.label,
+                            lan = state.agent.lanAddrs,
+                            wan = state.agent.wanAddrs,
+                        )
                         openSession(conn)
                     }
                     is ConnectionState.Failed -> lost(state.reason)

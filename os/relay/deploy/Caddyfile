@@ -1,0 +1,11 @@
+# Caddy terminates TLS (automatic Let's Encrypt certificate) and forwards
+# WebSocket traffic to the relay. Replace the host name with yours and point
+# its DNS A/AAAA record at the VPS. Install: /etc/caddy/Caddyfile, then
+#   sudo systemctl reload caddy
+relay.example.com {
+	reverse_proxy 127.0.0.1:8080
+	# Access logs hold only URLs and IPs: the relay never sees plaintext.
+	log {
+		output file /var/log/caddy/termbridge-relay.log
+	}
+}

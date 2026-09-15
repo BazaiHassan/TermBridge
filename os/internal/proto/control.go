@@ -17,6 +17,7 @@ type HelloAck struct {
 	Agent    string `json:"agent"`
 	OS       string `json:"os"`
 	Hostname string `json:"hostname"`
+	Addrs    *Addrs `json:"addrs,omitempty"` // PROTOCOL.md §9.4
 }
 
 // SessionOpen asks the agent for a new shell. Empty Shell and Cwd select the

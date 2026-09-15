@@ -58,9 +58,14 @@ func run(a fyne.App) error {
 	if err != nil {
 		return err
 	}
+	cfg, err := st.Config()
+	if err != nil {
+		return err
+	}
 	u := newUI(a)
 	ag, err := agent.New(agent.Config{
 		Store:   st,
+		Relay:   cfg.Relay, // set with `termbridge relay <url>`
 		Version: version,
 		Logger:  slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Events:  u,

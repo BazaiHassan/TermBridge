@@ -37,9 +37,14 @@ class DeviceIdentity @Inject constructor(private val vault: Vault) {
 data class PairedMachine(
     val agentId: String,
     val name: String,
+    /** LAN `host:port` addresses, best first. */
     val addresses: List<String>,
     val pairedAt: Long,
     val lastConnectedAt: Long = 0,
+    /** Public addresses the agent verified as reachable (port forward). */
+    val wan: List<String> = emptyList(),
+    /** Relay base URL used when no direct path works (PROTOCOL.md §9). */
+    val relay: String? = null,
 )
 
 /** Paired machines, sealed in the [Vault] (architecture §7.6). */
@@ -55,12 +60,24 @@ class MachineStore @Inject constructor(private val vault: Vault) {
 
     suspend fun upsert(machine: PairedMachine) = update { list -> list.filterNot { it.agentId == machine.agentId } + machine }
 
-    /** Records a successful connection; [via] (the address that won) is tried first next time. */
-    suspend fun markConnected(agentId: String, via: String? = null, at: Long = System.currentTimeMillis()) = update { list ->
+    /**
+     * Records a successful connection. [via] (the direct address that won) is tried first next
+     * time; [lan] and [wan] are the agent's current addresses from HELLO_ACK, which replace the
+     * stored ones so a changed IP is followed automatically (PROTOCOL.md §9.4).
+     */
+    suspend fun markConnected(
+        agentId: String,
+        via: String? = null,
+        lan: List<String> = emptyList(),
+        wan: List<String> = emptyList(),
+        at: Long = System.currentTimeMillis(),
+    ) = update { list ->
         list.map { m ->
             if (m.agentId != agentId) return@map m
-            val addresses = if (via != null && via in m.addresses) listOf(via) + (m.addresses - via) else m.addresses
-            m.copy(lastConnectedAt = at, addresses = addresses)
+            val reported = lan.isNotEmpty() || wan.isNotEmpty()
+            val known = if (lan.isNotEmpty()) lan else m.addresses
+            val addresses = if (via != null && via in known) listOf(via) + (known - via) else known
+            m.copy(lastConnectedAt = at, addresses = addresses, wan = if (reported) wan else m.wan)
         }
     }
 

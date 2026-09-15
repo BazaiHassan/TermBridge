@@ -24,6 +24,7 @@ import (
 	"termbridge/agent/internal/agent"
 	"termbridge/agent/internal/pairing"
 	"termbridge/agent/internal/store"
+	"termbridge/agent/internal/transport"
 )
 
 // ui is the desktop window. It implements agent.Events; those callbacks come
@@ -51,6 +52,8 @@ type ui struct {
 	list     *widget.List
 	empty    *canvas.Text
 	footer   *canvas.Text
+
+	listening, relay string // footer parts
 
 	devices []store.Device
 	window  *pairing.Window // open pairing window, nil when not pairing
@@ -391,9 +394,31 @@ func (u *ui) SessionClosed(peer string, _ uint8) {
 
 func (u *ui) Listening(addrs []string) {
 	fyne.Do(func() {
-		u.footer.Text = "Listening on " + strings.Join(phoneAddrs(addrs), ", ")
-		u.footer.Refresh()
+		u.listening = "Listening on " + strings.Join(phoneAddrs(addrs), ", ")
+		u.refreshFooter()
 	})
+}
+
+func (u *ui) RelayChanged(s transport.RelayStatus) {
+	fyne.Do(func() {
+		switch {
+		case s.Connected && s.Reachable:
+			u.relay = "relay connected · reachable directly at " + s.ObservedIP
+		case s.Connected:
+			u.relay = "relay connected"
+		default:
+			u.relay = "relay unreachable, retrying"
+		}
+		u.refreshFooter()
+	})
+}
+
+func (u *ui) refreshFooter() {
+	u.footer.Text = u.listening
+	if u.relay != "" {
+		u.footer.Text += "  ·  " + u.relay
+	}
+	u.footer.Refresh()
 }
 
 func (u *ui) Paired(d store.Device) {

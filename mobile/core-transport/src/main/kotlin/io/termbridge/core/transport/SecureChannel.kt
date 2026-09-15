@@ -41,7 +41,8 @@ internal class SecureChannel(
         fun onClosed(channel: SecureChannel, reason: String, error: Boolean)
     }
 
-    enum class FailureKind { UNREACHABLE, REJECTED, PROTOCOL }
+    /** OFFLINE: the relay answered but the agent is not connected to it. */
+    enum class FailureKind { UNREACHABLE, REJECTED, OFFLINE, PROTOCOL }
 
     data class Failure(val kind: FailureKind, val detail: String)
 
@@ -134,7 +135,11 @@ internal class SecureChannel(
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (transport == null) {
-                failed(FailureKind.REJECTED, reason.ifBlank { "Closed during handshake" })
+                when (code) { // relay close codes, PROTOCOL.md §9.3
+                    RELAY_OFFLINE, RELAY_NO_ANSWER -> failed(FailureKind.OFFLINE, reason.ifBlank { "agent offline" })
+                    RELAY_TOO_MANY -> failed(FailureKind.PROTOCOL, "The relay allows no more sessions to this computer right now")
+                    else -> failed(FailureKind.REJECTED, reason.ifBlank { "Closed during handshake" })
+                }
             } else {
                 ended(reason.ifBlank { "The computer closed the connection" }, error = false)
             }
@@ -162,11 +167,14 @@ internal class SecureChannel(
         response?.code == 403 -> "$endpoint only accepts devices on its local network"
         t is ConnectException || t is NoRouteToHostException -> "Nothing answered at $endpoint"
         t is SocketTimeoutException -> "Timed out reaching $endpoint"
-        t is UnknownHostException -> "Unknown host ${endpoint.host}"
+        t is UnknownHostException -> "Unknown host in ${endpoint.label}"
         else -> t.message ?: t.javaClass.simpleName
     }
 
     private companion object {
         const val NORMAL_CLOSURE = 1000
+        const val RELAY_OFFLINE = 4004
+        const val RELAY_NO_ANSWER = 4008
+        const val RELAY_TOO_MANY = 4029
     }
 }
