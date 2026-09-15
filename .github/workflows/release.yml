@@ -121,6 +121,30 @@ jobs:
           name: desktop-darwin-arm64
           path: os/dist/*
 
+  desktop-windows:
+    name: Desktop app windows/amd64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: Build
+        working-directory: os
+        shell: bash
+        env:
+          CGO_ENABLED: "1" # Fyne needs cgo; the runner's MinGW gcc is on PATH
+        run: |
+          # -H windowsgui: no console window opens next to the app.
+          go build -tags desktop -trimpath -ldflags "-s -w -H windowsgui -X main.version=${GITHUB_REF_NAME#v}" \
+            -o "dist/termbridge-desktop-${GITHUB_REF_NAME}-windows-amd64.exe" ./agent/cmd/termbridge-desktop > build.log 2>&1 \
+            || { cat build.log; echo "::error title=desktop build::$(tail -c 3000 build.log | tr '\n' ' ')"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-amd64
+          path: os/dist/*
+
   android:
     name: Android APKs
     runs-on: ubuntu-latest
@@ -172,7 +196,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [cli, relay, desktop-linux, desktop-macos, android]
+    needs: [cli, relay, desktop-linux, desktop-macos, desktop-windows, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -192,10 +216,10 @@ jobs:
             **Phone:** install `termbridge-${{ github.ref_name }}-android-arm64-v8a*.apk` (almost every current phone; `armeabi-v7a` for old 32-bit ones).
 
             **Computer:** download one of:
-            - `termbridge-desktop-…`: the desktop app. Run it and scan the QR code it shows.
-            - `termbridge-…`: the CLI. Run `chmod +x termbridge-* && ./termbridge-* pair`.
+            - `termbridge-desktop-…`: the desktop app (`.exe` on Windows). Run it and scan the QR code it shows.
+            - `termbridge-…`: the CLI. Run `chmod +x termbridge-* && ./termbridge-* pair`, or `termbridge-….exe pair` on Windows.
 
             On macOS, allow the unsigned binary once: `xattr -d com.apple.quarantine <file>`.
-            Windows support arrives in phase 3.
+            On Windows (10 version 1809 or later), SmartScreen warns about the unsigned app: choose **More info → Run anyway**.
 
             Check downloads against `SHA256SUMS.txt`. **Never run the agent as root.** Every paired phone would get a root shell.

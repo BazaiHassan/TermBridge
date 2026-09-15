@@ -50,6 +50,10 @@ jobs:
       # The session and link tests drive /bin/sh; these exercise the Windows code.
       - run: go test -count=1 ./agent/internal/pty/ ./agent/internal/autostart/ ./agent/internal/statusline/ ./internal/...
       - run: go build -o termbridge.exe ./agent/cmd/termbridge
+      - name: Desktop app
+        env:
+          CGO_ENABLED: "1" # Fyne needs cgo; the runner's MinGW gcc is on PATH
+        run: go build -tags desktop -ldflags "-H windowsgui" -o termbridge-desktop.exe ./agent/cmd/termbridge-desktop
 
   desktop:
     name: Desktop app (Linux)
