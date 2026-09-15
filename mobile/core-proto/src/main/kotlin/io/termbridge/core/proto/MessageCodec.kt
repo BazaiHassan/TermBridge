@@ -31,6 +31,11 @@ object MessageCodec {
             put(message.newSession.toByte())
         }
         is Message.SessionClose -> frame(Opcode.SESSION_CLOSE, message.session, EMPTY)
+        is Message.SessionAttach -> fixed(Opcode.SESSION_ATTACH, message.session) {
+            putShort(message.cols.toShort())
+            putShort(message.rows.toShort())
+        }
+        is Message.SessionAttached -> frame(Opcode.SESSION_ATTACHED, message.session, EMPTY)
         is Message.SessionExit -> fixed(Opcode.SESSION_EXIT, message.session) { putInt(message.exitCode) }
         is Message.Ping -> fixed(Opcode.PING, Protocol.CONTROL_SESSION) { putLong(message.timestamp) }
         is Message.Pong -> fixed(Opcode.PONG, Protocol.CONTROL_SESSION) { putLong(message.timestamp) }
@@ -83,6 +88,8 @@ object MessageCodec {
                 Message.SessionOpened(id)
             }
             Opcode.SESSION_CLOSE -> Message.SessionClose(sid)
+            Opcode.SESSION_ATTACH -> Message.SessionAttach(sid, buf.short.toInt() and 0xFFFF, buf.short.toInt() and 0xFFFF)
+            Opcode.SESSION_ATTACHED -> Message.SessionAttached(sid)
             Opcode.SESSION_EXIT -> Message.SessionExit(sid, buf.int)
             Opcode.PING -> Message.Ping(buf.long)
             Opcode.PONG -> Message.Pong(buf.long)

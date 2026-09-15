@@ -25,13 +25,14 @@ type Line struct {
 	drawn     bool
 	listening string
 	relay     string
-	peers     map[string]int // connected peer → open sessions
+	peers     map[string]int  // peer → open sessions (attached or detached)
+	away      map[string]bool // peers whose shells run detached
 }
 
 // New draws on f if f is a terminal.
 func New(f *os.File) *Line {
 	fi, err := f.Stat()
-	return &Line{w: f, tty: err == nil && fi.Mode()&os.ModeCharDevice != 0, peers: make(map[string]int)}
+	return &Line{w: f, tty: err == nil && fi.Mode()&os.ModeCharDevice != 0, peers: make(map[string]int), away: make(map[string]bool)}
 }
 
 // Write implements io.Writer for the logger.
@@ -50,10 +51,25 @@ func (l *Line) Listening(addrs []string) {
 }
 
 // PeerConnected implements link.Events.
-func (l *Line) PeerConnected(peer string) { l.update(func() { l.peers[peer] = 0 }) }
+func (l *Line) PeerConnected(peer string) {
+	l.update(func() {
+		if _, ok := l.peers[peer]; !ok {
+			l.peers[peer] = 0
+		}
+		delete(l.away, peer)
+	})
+}
 
 // PeerDisconnected implements link.Events.
-func (l *Line) PeerDisconnected(peer string) { l.update(func() { delete(l.peers, peer) }) }
+func (l *Line) PeerDisconnected(peer string) {
+	l.update(func() {
+		if l.peers[peer] == 0 {
+			delete(l.peers, peer)
+		} else {
+			l.away[peer] = true // its shells keep running until the resume window ends
+		}
+	})
+}
 
 // SessionOpened implements link.Events.
 func (l *Line) SessionOpened(peer string, _ uint8) {
@@ -69,6 +85,10 @@ func (l *Line) SessionClosed(peer string, _ uint8) {
 	l.update(func() {
 		if l.peers[peer] > 0 {
 			l.peers[peer]--
+		}
+		if l.peers[peer] == 0 && l.away[peer] {
+			delete(l.peers, peer)
+			delete(l.away, peer)
 		}
 	})
 }
@@ -133,8 +153,12 @@ func (l *Line) render() string {
 	who := strings.Join(hosts, ", ")
 	switch {
 	case sessions > 0:
-		return fmt.Sprintf("\x1b[1;97;41m ● LIVE \x1b[0m \x1b[1m%d shell session%s open\x1b[0m from %s · Ctrl+C stops the agent",
-			sessions, plural(sessions), who)
+		detached := ""
+		if len(l.away) > 0 {
+			detached = " (detached, waiting for the phone)"
+		}
+		return fmt.Sprintf("\x1b[1;97;41m ● LIVE \x1b[0m \x1b[1m%d shell session%s open\x1b[0m from %s%s · Ctrl+C stops the agent",
+			sessions, plural(sessions), who, detached)
 	case len(l.peers) > 0:
 		return fmt.Sprintf("\x1b[30;43m ● CONNECTED \x1b[0m %s · no shell open", who)
 	default:

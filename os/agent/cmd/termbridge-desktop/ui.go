@@ -35,7 +35,8 @@ type ui struct {
 	ag *agent.Agent
 
 	mu    sync.Mutex
-	peers map[string]int // connected phone → open shells
+	peers map[string]int  // phone → open shells (attached or detached)
+	away  map[string]bool // phones whose shells run detached
 
 	// Containers whose children change size or visibility; Fyne only lays
 	// out again when the parent is refreshed.
@@ -64,7 +65,7 @@ type ui struct {
 var _ agent.Events = (*ui)(nil)
 
 func newUI(a fyne.App) *ui {
-	u := &ui{a: a, w: a.NewWindow("TermBridge"), peers: make(map[string]int)}
+	u := &ui{a: a, w: a.NewWindow("TermBridge"), peers: make(map[string]int), away: make(map[string]bool)}
 	u.w.SetIcon(iconIdle)
 	u.w.Resize(fyne.NewSize(440, 720))
 	return u
@@ -359,7 +360,10 @@ func (u *ui) fatal(err error) {
 
 func (u *ui) PeerConnected(peer string) {
 	u.mu.Lock()
-	u.peers[peer] = 0
+	if _, ok := u.peers[peer]; !ok {
+		u.peers[peer] = 0
+	}
+	delete(u.away, peer)
 	u.mu.Unlock()
 	fyne.Do(func() {
 		u.refreshStatus()
@@ -369,7 +373,11 @@ func (u *ui) PeerConnected(peer string) {
 
 func (u *ui) PeerDisconnected(peer string) {
 	u.mu.Lock()
-	delete(u.peers, peer)
+	if u.peers[peer] == 0 {
+		delete(u.peers, peer)
+	} else {
+		u.away[peer] = true // its shells keep running until the resume window ends
+	}
 	u.mu.Unlock()
 	fyne.Do(u.refreshStatus)
 }
@@ -387,6 +395,10 @@ func (u *ui) SessionClosed(peer string, _ uint8) {
 	u.mu.Lock()
 	if u.peers[peer] > 0 {
 		u.peers[peer]--
+	}
+	if u.peers[peer] == 0 && u.away[peer] {
+		delete(u.peers, peer)
+		delete(u.away, peer)
 	}
 	u.mu.Unlock()
 	fyne.Do(u.refreshStatus)

@@ -47,7 +47,10 @@ func startAgent(t *testing.T, trusted noise.DHKey, allow func(netip.Addr) bool) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	reg := link.NewRegistry(0, nil, nil)
+	t.Cleanup(reg.Close)
 	opts := link.Options{
+		Registry: reg,
 		Sessions: session.NewManager(session.Config{Shell: "/bin/sh"}),
 		Ack:      proto.HelloAck{V: proto.Version, Agent: "e2e", OS: runtime.GOOS, Hostname: "box"},
 	}
@@ -58,8 +61,10 @@ func startAgent(t *testing.T, trusted noise.DHKey, allow func(netip.Addr) bool) 
 		Authorize: func(key, _ []byte) (transport.Peer, bool) {
 			return transport.Peer{Name: "test phone"}, bytes.Equal(key, trusted.Public)
 		},
-		Handler: func(ctx context.Context, c transport.Conn, _ transport.Peer) {
-			_ = link.Serve(ctx, c, opts)
+		Handler: func(ctx context.Context, c transport.Conn, p transport.Peer) {
+			o := opts
+			o.PeerKey = p.Key
+			_ = link.Serve(ctx, c, o)
 		},
 	})
 	if err != nil {

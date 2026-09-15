@@ -60,14 +60,26 @@ type app struct {
 	done chan struct{} // closed when Serve returns; err holds its result
 	err  error
 	mgr  *session.Manager
+	reg  *Registry
 }
 
 func startLink(t *testing.T) *app {
 	t.Helper()
 	mgr := session.NewManager(session.Config{Shell: "/bin/sh"})
+	reg := NewRegistry(0, nil, nil)
+	t.Cleanup(reg.Close)
+	return connect(t, mgr, reg, "phone-key")
+}
+
+// connect starts a second connection to the same agent, as device key.
+func connect(t *testing.T, mgr *session.Manager, reg *Registry, key string) *app {
+	t.Helper()
 	pipe := newPipe()
-	opts := Options{Sessions: mgr, Ack: proto.HelloAck{V: proto.Version, Agent: "test-agent", OS: "linux", Hostname: "box"}}
-	a := &app{t: t, pipe: pipe, done: make(chan struct{}), mgr: mgr}
+	opts := Options{
+		Sessions: mgr, Registry: reg, PeerKey: []byte(key),
+		Ack: proto.HelloAck{V: proto.Version, Agent: "test-agent", OS: "linux", Hostname: "box"},
+	}
+	a := &app{t: t, pipe: pipe, done: make(chan struct{}), mgr: mgr, reg: reg}
 	go func() {
 		a.err = Serve(context.Background(), pipe, opts)
 		close(a.done)
@@ -245,16 +257,93 @@ func TestUnknownOpcodeIsReportedNotFatal(t *testing.T) {
 	a.expect(proto.OpPong)
 }
 
-func TestDisconnectHangsUpSessions(t *testing.T) {
+func TestDisconnectKeepsSessionAndSameDeviceReattaches(t *testing.T) {
 	a := startLink(t)
 	a.hello()
-	a.open()
+	id := a.open()
+	// Output produced while nobody is connected must be replayed.
+	a.send(proto.Data(id, []byte("sleep 0.5; echo AWAY-$((20+22))\n")))
+	_ = a.pipe.Close("wifi dropped")
+	if err := a.wait(); err != nil {
+		t.Fatalf("Serve = %v", err)
+	}
+	if a.reg.Count() != 1 {
+		t.Fatalf("session did not survive the disconnect (count %d)", a.reg.Count())
+	}
+	time.Sleep(900 * time.Millisecond)
+
+	b := connect(t, a.mgr, a.reg, "phone-key")
+	b.hello()
+	b.send(proto.SessionAttach(id, 100, 30))
+	b.expect(proto.OpAttached)
+	var out strings.Builder
+	deadline := time.After(5 * time.Second)
+	for !strings.Contains(out.String(), "AWAY-42") {
+		select {
+		case raw := <-b.pipe.fromAgent:
+			f, _ := proto.Decode(raw)
+			if f.Op == proto.OpData {
+				out.Write(f.Payload)
+			}
+		case <-deadline:
+			t.Fatalf("replay lacks AWAY-42: %q", out.String())
+		}
+	}
+	b.send(proto.Data(id, []byte("exit 3\n")))
+	if _, code := b.untilExit(id); code != 3 {
+		t.Fatalf("exit = %d, want 3", code)
+	}
+}
+
+func TestOtherDeviceCannotAttach(t *testing.T) {
+	a := startLink(t)
+	a.hello()
+	id := a.open()
+	_ = a.pipe.Close("gone")
+	a.wait()
+	stranger := connect(t, a.mgr, a.reg, "other-key")
+	stranger.hello()
+	stranger.send(proto.SessionAttach(id, 80, 24))
+	f := stranger.expect(proto.OpError)
+	if code := errorCode(t, f); code != proto.CodeUnknownSession || f.Session != id {
+		t.Fatalf("got %s for session %d", code, f.Session)
+	}
+}
+
+func TestResumeWindowHangsUpDetachedSession(t *testing.T) {
+	mgr := session.NewManager(session.Config{Shell: "/bin/sh"})
+	reg := NewRegistry(200*time.Millisecond, nil, nil)
+	t.Cleanup(reg.Close)
+	a := connect(t, mgr, reg, "phone-key")
+	a.hello()
 	a.open()
 	_ = a.pipe.Close("gone")
-	if err := a.wait(); err != nil {
-		t.Fatalf("Serve = %v, want nil on clean disconnect", err)
+	a.wait()
+	deadline := time.Now().Add(5 * time.Second)
+	for reg.Count() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("detached session outlived the resume window")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if n := a.mgr.Count(); n != 0 {
-		t.Fatalf("%d sessions outlived the connection", n)
+	if mgr.Count() != 0 {
+		t.Fatalf("%d session IDs still reserved", mgr.Count())
+	}
+}
+
+func TestExitWhileDetachedIsReportedOnAttach(t *testing.T) {
+	a := startLink(t)
+	a.hello()
+	id := a.open()
+	a.send(proto.Data(id, []byte("sleep 0.3; exit 5\n")))
+	_ = a.pipe.Close("gone")
+	a.wait()
+	time.Sleep(800 * time.Millisecond)
+	b := connect(t, a.mgr, a.reg, "phone-key")
+	b.hello()
+	b.send(proto.SessionAttach(id, 80, 24))
+	b.expect(proto.OpAttached)
+	if _, code := b.untilExit(id); code != 5 {
+		t.Fatalf("exit = %d, want 5", code)
 	}
 }

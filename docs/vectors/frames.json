@@ -98,6 +98,20 @@
       "wire_hex": "1304ffffffff"
     },
     {
+      "name": "session_attach",
+      "kind": "session_attach",
+      "sid": 2,
+      "cols": 100,
+      "rows": 30,
+      "wire_hex": "14020064001e"
+    },
+    {
+      "name": "session_attached",
+      "kind": "session_attached",
+      "sid": 2,
+      "wire_hex": "1502"
+    },
+    {
       "name": "ping",
       "kind": "ping",
       "sid": 0,
@@ -177,6 +191,15 @@
       "msg": "resize payload must be 4 bytes",
       "wire_hex": "40097b22636f6465223a226261645f6672616d65222c226d7367223a22726573697a65207061796c6f6164206d7573742062652034206279746573227d",
       "json": true
+    },
+    {
+      "name": "error_unknown_session",
+      "kind": "error",
+      "sid": 4,
+      "code": "unknown_session",
+      "msg": "session 4 is gone",
+      "wire_hex": "40047b22636f6465223a22756e6b6e6f776e5f73657373696f6e222c226d7367223a2273657373696f6e203420697320676f6e65227d",
+      "json": true
     }
   ],
   "invalid": [
@@ -218,6 +241,16 @@
     {
       "name": "session_exit_short",
       "wire_hex": "1303000000",
+      "error": "bad_payload"
+    },
+    {
+      "name": "session_attach_short",
+      "wire_hex": "140200",
+      "error": "bad_payload"
+    },
+    {
+      "name": "session_attached_with_payload",
+      "wire_hex": "150201",
       "error": "bad_payload"
     },
     {

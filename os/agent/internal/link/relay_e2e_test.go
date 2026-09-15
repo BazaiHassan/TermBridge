@@ -94,7 +94,10 @@ func startRelayedAgent(t *testing.T, relayAddr string, trusted noise.DHKey) (ed2
 	if err != nil {
 		t.Fatal(err)
 	}
+	reg := link.NewRegistry(0, nil, nil)
+	t.Cleanup(reg.Close)
 	opts := link.Options{
+		Registry: reg,
 		Sessions: session.NewManager(session.Config{Shell: "/bin/sh"}),
 		Ack:      proto.HelloAck{V: proto.Version, Agent: "relay-e2e", OS: runtime.GOOS, Hostname: "box"},
 	}
@@ -110,8 +113,12 @@ func startRelayedAgent(t *testing.T, relayAddr string, trusted noise.DHKey) (ed2
 			Authorize: func(key, _ []byte) (transport.Peer, bool) {
 				return transport.Peer{Name: "phone"}, bytes.Equal(key, trusted.Public)
 			},
-			Handler: func(ctx context.Context, c transport.Conn, _ transport.Peer) { _ = link.Serve(ctx, c, opts) },
-			Logger:  discard,
+			Handler: func(ctx context.Context, c transport.Conn, p transport.Peer) {
+				o := opts
+				o.PeerKey = p.Key
+				_ = link.Serve(ctx, c, o)
+			},
+			Logger: discard,
 			OnStatus: func(s transport.RelayStatus) {
 				select {
 				case status <- s:

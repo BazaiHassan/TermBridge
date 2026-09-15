@@ -56,6 +56,7 @@ const (
 	CodeUnsupportedOpcode  = "unsupported_opcode"
 	CodeSessionOpenFailed  = "session_open_failed"
 	CodeTooManySessions    = "too_many_sessions"
+	CodeUnknownSession     = "unknown_session"
 )
 
 // JSONFrame builds a control frame whose payload is v encoded as JSON.

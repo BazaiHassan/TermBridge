@@ -38,6 +38,16 @@ sealed interface Message {
 
     data class SessionClose(override val session: Int) : Message
 
+    /** Re-attach a session that survived a disconnect (PROTOCOL.md §4.8), at this size. */
+    data class SessionAttach(override val session: Int, val cols: Int, val rows: Int) : Message {
+        init {
+            require(cols in 0..0xFFFF && rows in 0..0xFFFF) { "size ${cols}x$rows out of u16 range" }
+        }
+    }
+
+    /** The agent accepted SESSION_ATTACH; buffered output follows as DATA. */
+    data class SessionAttached(override val session: Int) : Message
+
     /** Killed by signal N → 128 + N. */
     data class SessionExit(override val session: Int, val exitCode: Int) : Message
 

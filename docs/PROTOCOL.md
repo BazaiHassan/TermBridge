@@ -97,6 +97,8 @@ Noise pattern **IK**, prologue `TermBridge/1` (ASCII, no terminator).
 | `0x11` | `SESSION_OPENED` | agent → app | 0           | `u8` new sessionID (1 byte)           |
 | `0x12` | `SESSION_CLOSE`  | both        | session     | empty                                 |
 | `0x13` | `SESSION_EXIT`   | agent → app | session     | `i32` exit code (4 bytes)             |
+| `0x14` | `SESSION_ATTACH` | app → agent | session     | `u16 cols, u16 rows` (4 bytes)        |
+| `0x15` | `SESSION_ATTACHED` | agent → app | session   | empty                                 |
 | `0x20` | `PING`           | both        | 0           | `u64` timestamp, ms (8 bytes)         |
 | `0x21` | `PONG`           | both        | 0           | the 8 PING bytes, echoed verbatim     |
 | `0x30` | `HELLO`          | app → agent | 0           | JSON `Hello`                          |
@@ -142,6 +144,7 @@ byte.
 | `unsupported_opcode`  | opcode unknown to this agent                              | kept       |
 | `session_open_failed` | the PTY or shell could not be started                     | kept       |
 | `too_many_sessions`   | per-agent session limit reached                           | kept       |
+| `unknown_session`     | `SESSION_ATTACH` for a session that no longer exists, or belongs to another device | kept |
 
 ---
 
@@ -180,8 +183,22 @@ byte.
    *N*, the exit code is `128 + N`.
 7. Frames for an **unknown sessionID** are dropped silently. This covers a `DATA`
    frame racing a `SESSION_EXIT`.
-8. **Phases 1–5:** sessions end when their connection ends. Surviving a reconnect
-   (phase 6) requires a protocol revision that adds re-attach.
+8. **Surviving disconnects.** A session belongs to the **device key** that opened
+   it (§1.2), not to the connection. When a connection ends:
+   - The agent keeps that device's sessions running for the **resume window**
+     (15 minutes). It buffers up to **256 KiB** of output per session; when the
+     buffer is full, the oldest bytes are dropped.
+   - A later connection authenticated with the **same device key** re-attaches by
+     sending `SESSION_ATTACH(sid, cols, rows)`. The agent answers
+     `SESSION_ATTACHED(sid)`, replays the buffered output as `DATA`, then continues
+     live. If the shell exited while detached, `SESSION_EXIT` follows the replay.
+   - `SESSION_ATTACH` for an unknown or expired session, or for a session owned by
+     another device, is answered with `ERROR unknown_session`, carrying that
+     sessionID.
+   - When the resume window ends, the agent hangs up the detached sessions. So do
+     `termbridge revoke` and agent shutdown.
+   - An older agent answers `SESSION_ATTACH` with `unsupported_opcode`. The app
+     then opens a new session instead.
 
 ---
 

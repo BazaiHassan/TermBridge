@@ -97,6 +97,8 @@ class VectorsTest {
             "resize" -> Message.Resize(sid, v.int("cols"), v.int("rows"))
             "session_opened" -> Message.SessionOpened(v.int("new_sid"))
             "session_close" -> Message.SessionClose(sid)
+            "session_attach" -> Message.SessionAttach(sid, v.int("cols"), v.int("rows"))
+            "session_attached" -> Message.SessionAttached(sid)
             "session_exit" -> Message.SessionExit(sid, v.int("code"))
             "ping" -> Message.Ping(v.str("ts").toULong().toLong())
             "pong" -> Message.Pong(v.str("ts").toULong().toLong())

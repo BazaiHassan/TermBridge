@@ -187,6 +187,10 @@ func buildTyped(t *testing.T, v typedVector) Frame {
 		f = SessionOpened(v.NewSid)
 	case "session_close":
 		f = SessionClose(v.Sid)
+	case "session_attach":
+		f = SessionAttach(v.Sid, v.Cols, v.Rows)
+	case "session_attached":
+		f = SessionAttached(v.Sid)
 	case "session_exit":
 		var code int32
 		if err := json.Unmarshal(v.Code, &code); err != nil {
@@ -273,6 +277,8 @@ func parsePayload(f Frame) error {
 	switch f.Op {
 	case OpResize:
 		_, _, err = ParseResize(f)
+	case OpSessionAttach:
+		_, _, err = ParseSessionAttach(f)
 	case OpSessionOpened:
 		_, err = ParseSessionOpened(f)
 	case OpSessionExit:

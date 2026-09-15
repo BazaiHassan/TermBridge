@@ -1,6 +1,7 @@
 // Package link serves one connected peer: it enforces the HELLO handshake,
 // routes frames to that peer's sessions and multiplexes their output back
-// over the connection (PROTOCOL.md §4–5).
+// over the connection (PROTOCOL.md §4–5). Sessions themselves live in a
+// Registry and outlive the connection (§4.8).
 package link
 
 import (
@@ -37,8 +38,10 @@ type Events interface {
 // Options configures Serve.
 type Options struct {
 	Sessions     *session.Manager
+	Registry     *Registry      // required: where sessions live between connections
 	Ack          proto.HelloAck // sent in reply to HELLO
 	PeerName     string         // paired device name; defaults to the remote address
+	PeerKey      []byte         // the device's Noise static key; owns the sessions it opens
 	Logger       *slog.Logger
 	Events       Events        // optional
 	HelloTimeout time.Duration // 0: 10 s
@@ -76,21 +79,23 @@ type link struct {
 	greeted bool
 
 	mu    sync.Mutex
-	owned map[uint8]*session.Session
-	pumps sync.WaitGroup
+	owned map[uint8]*detachable
 }
 
 // Serve runs the protocol on c until the peer disconnects, the peer violates
-// the protocol or ctx ends. Every session opened on c is hung up before
-// Serve returns. A clean disconnect returns nil.
+// the protocol or ctx ends. The peer's sessions keep running afterwards for
+// the registry's resume window. A clean disconnect returns nil.
 func Serve(ctx context.Context, c transport.Conn, opts Options) error {
 	opts = opts.withDefaults()
+	if opts.Registry == nil {
+		return errors.New("link: Options.Registry is required")
+	}
 	l := &link{
 		conn:  c,
 		opts:  opts,
 		peer:  cmp.Or(opts.PeerName, c.RemoteAddr()),
 		out:   newOutbox(opts.QueueLimit),
-		owned: make(map[uint8]*session.Session),
+		owned: make(map[uint8]*detachable),
 	}
 	l.log = opts.Logger.With("peer", l.peer, "remote", c.RemoteAddr())
 
@@ -110,8 +115,8 @@ func Serve(ctx context.Context, c transport.Conn, opts Options) error {
 
 	err := l.readLoop(sctx)
 	scancel()
-	l.pumps.Wait()
-	l.out.close()
+	l.out.close() // sessions now hold their output instead of queueing it here
+	l.detachAll()
 	flush := time.AfterFunc(flushTimeout, wcancel)
 	werr := <-writerDone
 	flush.Stop()
@@ -194,23 +199,25 @@ func (l *link) dispatch(ctx context.Context, f proto.Frame) error {
 	}
 	switch f.Op {
 	case proto.OpData:
-		if s := l.session(f.Session); s != nil {
-			if _, err := s.Write(f.Payload); err != nil {
+		if d := l.session(f.Session); d != nil {
+			if _, err := d.s.Write(f.Payload); err != nil {
 				l.log.Debug("input dropped", "session", f.Session, "err", err)
 			}
 		}
 	case proto.OpResize:
 		cols, rows, _ := proto.ParseResize(f) // length already validated
-		if s := l.session(f.Session); s != nil {
-			if err := s.Resize(cols, rows); err != nil {
+		if d := l.session(f.Session); d != nil {
+			if err := d.s.Resize(cols, rows); err != nil {
 				l.log.Debug("resize failed", "session", f.Session, "err", err)
 			}
 		}
 	case proto.OpSessionOpen:
 		return l.openSession(ctx, f)
+	case proto.OpSessionAttach:
+		return l.attachSession(ctx, f)
 	case proto.OpSessionClose:
-		if s := l.session(f.Session); s != nil {
-			_ = s.Close() // the pump reports SESSION_EXIT
+		if d := l.session(f.Session); d != nil {
+			_ = d.s.Close() // SESSION_EXIT follows when the shell is gone
 		}
 	case proto.OpPing:
 		return l.out.control(proto.Frame{Op: proto.OpPong, Session: proto.ControlSession, Payload: f.Payload})
@@ -240,46 +247,63 @@ func (l *link) openSession(ctx context.Context, f proto.Frame) error {
 		l.log.Warn("session open failed", "err", err)
 		return l.replyError(reply, code, err.Error())
 	}
-	l.mu.Lock()
-	l.owned[s.ID()] = s
-	l.mu.Unlock()
+	d := l.opts.Registry.adopt(s, l.opts.PeerKey, l.peer)
 	if err := reply(proto.SessionOpened(s.ID())); err != nil {
-		_ = s.Close() // the pump still runs to release the session
+		return nil // connection closing: the session waits, detached, for this device
 	}
-	l.pumps.Add(1)
-	go l.pump(ctx, s)
+	if err := d.attach(ctx, l.out, false); err == nil {
+		l.own(d)
+	}
 	return nil
 }
 
-func (l *link) pump(ctx context.Context, s *session.Session) {
-	defer l.pumps.Done()
-	defer s.Release() // only after SESSION_EXIT is queued: IDs are not reused early
-	id := s.ID()
-	l.opts.Events.SessionOpened(l.peer, id)
-	defer l.opts.Events.SessionClosed(l.peer, id)
-
-	code, err := s.Run(ctx, func(ctx context.Context, p []byte) error {
-		return l.out.session(ctx, proto.Data(id, p))
-	})
-	if ctx.Err() == nil {
-		if qerr := l.out.session(ctx, proto.SessionExit(id, int32(code))); qerr != nil {
-			err = errors.Join(err, qerr)
+// attachSession re-attaches a session that survived a disconnect (§4.8).
+func (l *link) attachSession(ctx context.Context, f proto.Frame) error {
+	cols, rows, _ := proto.ParseSessionAttach(f) // length already validated
+	d := l.opts.Registry.find(f.Session, l.opts.PeerKey)
+	if d == nil {
+		return l.sendError(f.Session, proto.CodeUnknownSession, fmt.Sprintf("session %d is gone", f.Session))
+	}
+	if err := d.attach(ctx, l.out, true); err != nil {
+		if errors.Is(err, errGone) {
+			return l.sendError(f.Session, proto.CodeUnknownSession, fmt.Sprintf("session %d is gone", f.Session))
 		}
+		return nil
 	}
-	l.mu.Lock()
-	delete(l.owned, id)
-	l.mu.Unlock()
-	if err != nil {
-		l.log.Info("session ended", "session", id, "exit", code, "err", err)
-	} else {
-		l.log.Info("session ended", "session", id, "exit", code)
+	l.own(d)
+	if err := d.s.Resize(cols, rows); err != nil {
+		l.log.Debug("resize on attach failed", "session", f.Session, "err", err)
 	}
+	l.log.Info("session re-attached", "session", f.Session)
+	return nil
 }
 
-func (l *link) session(id uint8) *session.Session {
+func (l *link) own(d *detachable) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.owned[id] // nil for 0, unknown or already-exited IDs: dropped (§4.7)
+	l.owned[d.id] = d
+	l.mu.Unlock()
+}
+
+// session returns a session attached to this connection; frames for others
+// (unknown, exited, or taken over by a newer connection) are dropped (§4.7).
+func (l *link) session(id uint8) *detachable {
+	l.mu.Lock()
+	d := l.owned[id]
+	l.mu.Unlock()
+	if d == nil || !d.attachedTo(l.out) {
+		return nil
+	}
+	return d
+}
+
+func (l *link) detachAll() {
+	l.mu.Lock()
+	owned := l.owned
+	l.owned = nil
+	l.mu.Unlock()
+	for _, d := range owned {
+		d.detach(l.out)
+	}
 }
 
 func (l *link) sendError(sid uint8, code, msg string) error {

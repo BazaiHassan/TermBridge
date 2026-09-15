@@ -63,11 +63,11 @@ func Encode(f Frame) ([]byte, error) {
 // fixedPayloadLen reports the payload length the spec mandates for op.
 func fixedPayloadLen(op Opcode) (int, bool) {
 	switch op {
-	case OpResize, OpSessionExit:
+	case OpResize, OpSessionExit, OpSessionAttach:
 		return 4, true
 	case OpSessionOpened:
 		return 1, true
-	case OpSessionClose:
+	case OpSessionClose, OpAttached:
 		return 0, true
 	case OpPing, OpPong:
 		return 8, true
@@ -102,6 +102,21 @@ func ParseResize(f Frame) (cols, rows uint16, err error) {
 		return 0, 0, err
 	}
 	return binary.BigEndian.Uint16(f.Payload), binary.BigEndian.Uint16(f.Payload[2:]), nil
+}
+
+// SessionAttach builds a SESSION_ATTACH frame: re-attach sid at this size.
+func SessionAttach(sid uint8, cols, rows uint16) Frame {
+	f := Resize(sid, cols, rows)
+	f.Op = OpSessionAttach
+	return f
+}
+
+// ParseSessionAttach decodes the size carried by SESSION_ATTACH.
+func ParseSessionAttach(f Frame) (cols, rows uint16, err error) { return ParseResize(f) }
+
+// SessionAttached confirms a re-attach; replayed output follows as DATA.
+func SessionAttached(sid uint8) Frame {
+	return Frame{Op: OpAttached, Session: sid}
 }
 
 // SessionOpened builds the reply to SESSION_OPEN carrying the new session ID.

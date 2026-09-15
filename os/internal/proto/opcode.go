@@ -23,6 +23,8 @@ const (
 	OpSessionOpened Opcode = 0x11
 	OpSessionClose  Opcode = 0x12
 	OpSessionExit   Opcode = 0x13
+	OpSessionAttach Opcode = 0x14
+	OpAttached      Opcode = 0x15 // SESSION_ATTACHED
 	OpPing          Opcode = 0x20
 	OpPong          Opcode = 0x21
 	OpHello         Opcode = 0x30
@@ -37,6 +39,8 @@ var opNames = map[Opcode]string{
 	OpSessionOpened: "SESSION_OPENED",
 	OpSessionClose:  "SESSION_CLOSE",
 	OpSessionExit:   "SESSION_EXIT",
+	OpSessionAttach: "SESSION_ATTACH",
+	OpAttached:      "SESSION_ATTACHED",
 	OpPing:          "PING",
 	OpPong:          "PONG",
 	OpHello:         "HELLO",

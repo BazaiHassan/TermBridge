@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/ed25519"
@@ -61,6 +62,9 @@ type Config struct {
 	// LANOnly accepts peers from the local network only and disables the
 	// relay. Otherwise any peer may try; only paired keys get past Noise.
 	LANOnly bool
+	// ResumeWindow is how long a phone's sessions survive a disconnect
+	// (PROTOCOL.md §4.8); 0 means 15 minutes.
+	ResumeWindow time.Duration
 }
 
 // Agent is a configured, not yet running agent.
@@ -72,6 +76,7 @@ type Agent struct {
 	edPub    ed25519.PublicKey
 	static   noise.DHKey
 	sessions *session.Manager
+	reg      *link.Registry
 	hostname string
 
 	mu     sync.Mutex
@@ -174,6 +179,8 @@ func (a *Agent) Revoke(name string) (store.Device, error) {
 
 // Run serves until ctx ends; every session is hung up before it returns.
 func (a *Agent) Run(ctx context.Context) error {
+	a.reg = link.NewRegistry(a.cfg.ResumeWindow, a.events, a.log)
+	defer a.reg.Close() // hangs up every session, attached or not
 	addrs := a.cfg.Listen
 	if len(addrs) == 0 {
 		var err error
@@ -289,6 +296,11 @@ func (a *Agent) handle(ctx context.Context, c transport.Conn, peer transport.Pee
 	defer cancel()
 	lc := &liveConn{key: peer.Key, cancel: cancel}
 	a.mu.Lock()
+	for other := range a.conns {
+		if bytes.Equal(other.key, peer.Key) {
+			other.cancel() // the phone reconnected: its old connection is dead
+		}
+	}
 	a.conns[lc] = struct{}{}
 	a.mu.Unlock()
 	defer func() {
@@ -301,6 +313,8 @@ func (a *Agent) handle(ctx context.Context, c transport.Conn, peer transport.Pee
 	}
 	opts := link.Options{
 		Sessions: a.sessions,
+		Registry: a.reg,
+		PeerKey:  peer.Key,
 		Ack: proto.HelloAck{
 			V:        proto.Version,
 			Agent:    "termbridge-agent/" + cmp.Or(a.cfg.Version, "dev"),
@@ -347,6 +361,12 @@ func (a *Agent) dropRevoked() {
 			a.log.Warn("device revoked; disconnecting", "key", identity.Fingerprint(lc.key))
 			lc.cancel()
 		}
+	}
+	if a.reg != nil { // detached sessions of a revoked phone die too
+		a.reg.CloseUnless(func(key []byte) bool {
+			_, ok, err := a.cfg.Store.FindDevice(key)
+			return err != nil || ok
+		})
 	}
 }
 

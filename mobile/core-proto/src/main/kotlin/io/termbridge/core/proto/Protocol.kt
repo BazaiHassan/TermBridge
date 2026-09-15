@@ -24,6 +24,8 @@ enum class Opcode(val code: Int) {
     SESSION_OPENED(0x11),
     SESSION_CLOSE(0x12),
     SESSION_EXIT(0x13),
+    SESSION_ATTACH(0x14),
+    SESSION_ATTACHED(0x15),
     PING(0x20),
     PONG(0x21),
     HELLO(0x30),
@@ -34,9 +36,9 @@ enum class Opcode(val code: Int) {
     /** Payload length mandated by the spec, or -1 when variable. */
     val fixedPayload: Int
         get() = when (this) {
-            RESIZE, SESSION_EXIT -> 4
+            RESIZE, SESSION_EXIT, SESSION_ATTACH -> 4
             SESSION_OPENED -> 1
-            SESSION_CLOSE -> 0
+            SESSION_CLOSE, SESSION_ATTACHED -> 0
             PING, PONG -> 8
             else -> -1
         }
@@ -57,6 +59,7 @@ object ErrorCodes {
     const val UNSUPPORTED_OPCODE = "unsupported_opcode"
     const val SESSION_OPEN_FAILED = "session_open_failed"
     const val TOO_MANY_SESSIONS = "too_many_sessions"
+    const val UNKNOWN_SESSION = "unknown_session"
 }
 
 class ProtocolException(val reason: Reason, message: String, cause: Throwable? = null) : Exception(message, cause) {
