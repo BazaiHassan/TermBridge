@@ -120,6 +120,20 @@ class TerminalLine(cols: Int) {
         return sb.toString()
     }
 
+    /** Copies cell [col] (code point, style and marks) to [dest] at [destCol]. */
+    internal fun copyCell(col: Int, dest: TerminalLine, destCol: Int) {
+        dest.text[destCol] = text[col]
+        dest.styles[destCol] = styles[col]
+        marks?.get(col)?.let { m -> (dest.marks ?: HashMap<Int, String>().also { dest.marks = it })[destCol] = m }
+    }
+
+    /** Columns up to and including the last written cell; explicit spaces count, empty cells don't. */
+    internal fun usedCols(): Int {
+        var end = cols
+        while (end > 0 && text[end - 1] == 0) end--
+        return end
+    }
+
     private fun dropMarks(from: Int, to: Int) {
         val m = marks ?: return
         m.keys.removeAll { it in from until to }

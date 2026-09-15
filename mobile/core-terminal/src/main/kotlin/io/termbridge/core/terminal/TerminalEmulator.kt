@@ -482,21 +482,28 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
     }
 
     /**
-     * Resizes without reflow (phase 2). When the main screen loses rows, lines above the cursor
-     * move into scrollback so the cursor line stays visible.
+     * Resizes both screens. A width change reflows the main screen and its scrollback: wrapped
+     * rows are joined into their logical lines and split again at the new width, so text is
+     * neither cut off nor left in short fragments, and the cursor stays on the same character.
+     * The alternate screen is not reflowed: its application redraws on the resize. When only the
+     * height shrinks, lines above the cursor move into scrollback so the cursor line stays visible.
      */
     fun resize(newCols: Int, newRows: Int) {
         require(newCols > 0 && newRows > 0) { "size ${newCols}x$newRows" }
         if (newCols == cols && newRows == rows) return
-        val mainShift = if (isAltScreen) maxOf(0, lastUsedRow(main) + 1 - newRows) else maxOf(0, cursorRow + 1 - newRows)
-        for (r in 0 until mainShift) {
-            scrollCounter++
-            scrollback.push(main[r])
+        if (newCols != cols) {
+            reflowMain(newCols, newRows)
+        } else {
+            val mainShift = if (isAltScreen) maxOf(0, lastUsedRow(main) + 1 - newRows) else maxOf(0, cursorRow + 1 - newRows)
+            for (r in 0 until mainShift) {
+                scrollCounter++
+                scrollback.push(main[r])
+            }
+            main = Array(newRows) { r -> main.getOrNull(r + mainShift) ?: TerminalLine(newCols) }
+            if (!isAltScreen) cursorRow -= mainShift
         }
-        main = Array(newRows) { r -> (main.getOrNull(r + mainShift) ?: TerminalLine(newCols)).also { it.resize(newCols) } }
         alt = Array(newRows) { r -> (alt.getOrNull(r) ?: TerminalLine(newCols)).also { it.resize(newCols) } }
         screen = if (isAltScreen) alt else main
-        if (!isAltScreen) cursorRow -= mainShift
         cols = newCols
         rows = newRows
         top = 0
@@ -504,6 +511,117 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
         dirty = BooleanArray(newRows) { true }
         moveTo(cursorRow, cursorCol)
     }
+
+    /**
+     * Rebuilds scrollback and the main screen at [newCols]. The cursor tracked is the live one,
+     * or the saved main-screen cursor while the alternate screen is shown.
+     */
+    private fun reflowMain(newCols: Int, newRows: Int) {
+        val onAlt = isAltScreen
+        val trackRow = if (onAlt) saved.row else cursorRow
+        val trackCol = if (onAlt) saved.col else cursorCol
+        val trackPending = if (onAlt) saved.pendingWrap else pendingWrap
+
+        // Every row, oldest first. Empty screen rows below both the content and the cursor are
+        // dropped; they are added back as blank rows at the end.
+        val lastRow = maxOf(trackRow, lastUsedRow(main))
+        val old = ArrayList<TerminalLine>(scrollback.size + lastRow + 1)
+        for (i in 0 until scrollback.size) old += scrollback[i]
+        for (r in 0..lastRow) old += main[r]
+        val cursorIndex = scrollback.size + trackRow
+
+        val out = ArrayList<TerminalLine>(old.size + newRows)
+        var srcRow = IntArray(256)
+        var srcCol = IntArray(256)
+        var newCursorRow = 0
+        var newCursorCol = 0
+        var i = 0
+        while (i < old.size) {
+            var j = i // rows i..j form one logical line: all but the last wrapped
+            while (j < old.size - 1 && old[j].wrapped) j++
+            var n = 0
+            var cursorOffset = -1
+            for (k in i..j) {
+                val line = old[k]
+                val len = if (k < j) {
+                    // A row that wrapped early to keep a wide character whole ends in one blank.
+                    val early = line.cols > 0 && line.text[line.cols - 1] == 0 && startsWide(old[k + 1])
+                    if (early) line.cols - 1 else line.cols
+                } else {
+                    line.usedCols()
+                }
+                if (k == cursorIndex) cursorOffset = n + trackCol + (if (trackPending) 1 else 0)
+                if (srcRow.size < n + len) {
+                    srcRow = srcRow.copyOf(maxOf(srcRow.size * 2, n + len))
+                    srcCol = srcCol.copyOf(srcRow.size)
+                }
+                for (c in 0 until len) {
+                    srcRow[n] = k
+                    srcCol[n] = c
+                    n++
+                }
+            }
+            val needed = maxOf(n, cursorOffset) // keep blanks up to the cursor
+            var pos = 0
+            do {
+                val row = TerminalLine(newCols)
+                val startPos = pos
+                var col = 0
+                while (col < newCols && pos < needed) {
+                    if (pos >= n) { // blank padding before the cursor
+                        col++
+                        pos++
+                        continue
+                    }
+                    val line = old[srcRow[pos]]
+                    val c = srcCol[pos]
+                    val cp = line.text[c]
+                    if (cp == TerminalLine.WIDE_TAIL) { // a right half without its left: drop it
+                        pos++
+                        continue
+                    }
+                    val wide = c + 1 < line.cols && line.text[c + 1] == TerminalLine.WIDE_TAIL
+                    if (wide && col == newCols - 1) {
+                        if (col > 0) break // wrap early: the pair stays together
+                        pos += 2 // a one-column screen cannot show it at all
+                        continue
+                    }
+                    line.copyCell(c, row, col)
+                    if (wide) {
+                        line.copyCell(c + 1, row, col + 1)
+                        col += 2
+                        pos += 2
+                    } else {
+                        col++
+                        pos++
+                    }
+                }
+                if (cursorOffset >= startPos && (cursorOffset < pos || (pos >= needed && cursorOffset == pos))) {
+                    newCursorRow = out.size
+                    newCursorCol = minOf(cursorOffset - startPos, newCols - 1)
+                }
+                row.wrapped = pos < needed
+                out += row
+            } while (pos < needed)
+            i = j + 1
+        }
+
+        var screenStart = maxOf(0, out.size - newRows)
+        if (newCursorRow < screenStart) screenStart = newCursorRow
+        scrollback.clear()
+        for (k in 0 until screenStart) scrollback.push(out[k])
+        main = Array(newRows) { r -> out.getOrNull(screenStart + r) ?: TerminalLine(newCols) }
+        if (onAlt) {
+            saved = SavedCursor(newCursorRow - screenStart, newCursorCol, saved.style, false, saved.lineDrawing)
+        } else {
+            cursorRow = newCursorRow - screenStart
+            cursorCol = newCursorCol
+            pendingWrap = false
+        }
+    }
+
+    private fun startsWide(line: TerminalLine): Boolean =
+        line.cols > 1 && line.text[1] == TerminalLine.WIDE_TAIL
 
     private fun lastUsedRow(buffer: Array<TerminalLine>): Int =
         buffer.indexOfLast { line -> line.text.any { it != 0 } }
