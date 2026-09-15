@@ -44,8 +44,12 @@ jobs:
           go-version-file: os/go.mod
           cache-dependency-path: os/go.sum
       - name: GUI build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev xvfb
-      - run: make desktop
+        # GLFW 3.4 (Fyne 2.8) compiles both its X11 and Wayland backends.
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev libwayland-dev xvfb
+      - name: Build
+        run: |
+          # Surface compiler output as an annotation: job logs need a login to read.
+          make desktop > build.log 2>&1 || { cat build.log; echo "::error title=make desktop::$(tail -c 3000 build.log | tr '\n' ' ')"; exit 1; }
       - name: Window snapshots
         run: xvfb-run -a go test -tags desktop -count=1 ./agent/cmd/termbridge-desktop/
 

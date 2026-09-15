@@ -15,10 +15,12 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 AGENT   := ./agent/cmd/termbridge
 
 DESKTOP := ./agent/cmd/termbridge-desktop
-# The desktop app uses Fyne (cgo + OpenGL). X11 build needs e.g. on Fedora:
-#   sudo dnf install gcc libX11-devel libXcursor-devel libXrandr-devel libXinerama-devel \
-#                    libXi-devel libXxf86vm-devel mesa-libGL-devel
-# Wayland-only build without X11 headers: make desktop DESKTOP_TAGS="desktop wayland"
+# The desktop app uses Fyne 2.8 (cgo + OpenGL); its GLFW 3.4 compiles both the X11 and the
+# Wayland backend, so it needs both sets of headers:
+#   Fedora:  sudo dnf install gcc libX11-devel libXcursor-devel libXrandr-devel libXinerama-devel \
+#                    libXi-devel libXxf86vm-devel mesa-libGL-devel wayland-devel libxkbcommon-devel
+#   Ubuntu:  sudo apt install gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev libwayland-dev
+# Wayland-only build without the X11 headers: make desktop DESKTOP_TAGS="desktop wayland"
 DESKTOP_TAGS ?= desktop
 
 .PHONY: all build desktop install-desktop cross test race vet lint run clean

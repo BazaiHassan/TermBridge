@@ -39,8 +39,11 @@ make desktop                          # X11 + Wayland build; needs GL/X11 header
 make install-desktop                  # optional: install to ~/.local/bin and add to the app menu
 ```
 
-Build dependencies on Fedora:
-`sudo dnf install gcc libX11-devel libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXxf86vm-devel mesa-libGL-devel`.
+Build dependencies. The GUI toolkit compiles both X11 and Wayland support, so it needs both sets of headers:
+
+- **Fedora:** `sudo dnf install gcc libX11-devel libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXxf86vm-devel mesa-libGL-devel wayland-devel libxkbcommon-devel`
+- **Ubuntu/Debian:** `sudo apt install gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev libwayland-dev`
+
 If you only need a Wayland build and don't have the X11 headers, run `make desktop DESKTOP_TAGS="desktop wayland"`.
 
 **CLI.** For servers or headless machines:

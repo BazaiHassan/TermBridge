@@ -59,12 +59,14 @@ jobs:
           go-version-file: os/go.mod
           cache-dependency-path: os/go.sum
       - name: GUI build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
+        # GLFW 3.4 (Fyne 2.8) compiles both its X11 and Wayland backends.
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev libwayland-dev
       - name: Build
         working-directory: os
         run: |
           CGO_ENABLED=1 go build -tags desktop -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
-            -o "dist/termbridge-desktop-${GITHUB_REF_NAME}-linux-amd64" ./agent/cmd/termbridge-desktop
+            -o "dist/termbridge-desktop-${GITHUB_REF_NAME}-linux-amd64" ./agent/cmd/termbridge-desktop > build.log 2>&1 \
+            || { cat build.log; echo "::error title=desktop build::$(tail -c 3000 build.log | tr '\n' ' ')"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux-amd64
