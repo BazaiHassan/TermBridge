@@ -11,6 +11,13 @@ import android.view.GestureDetector
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.MenuItem
+import android.view.Menu
+import android.view.HapticFeedbackConstants
+import android.view.ActionMode
+import android.graphics.Rect
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
@@ -23,6 +30,7 @@ import io.termbridge.core.terminal.KeyEncoder
 import io.termbridge.core.terminal.Mods
 import io.termbridge.core.terminal.MouseEncoder
 import io.termbridge.core.terminal.MouseMode
+import io.termbridge.core.terminal.Selection
 import io.termbridge.core.terminal.Style
 import io.termbridge.core.terminal.TermColor
 import io.termbridge.core.terminal.TerminalEmulator
@@ -93,6 +101,11 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
     private var scrollAccumulator = 0f
     private val framePending = AtomicBoolean(false)
 
+    /** Text chosen by a long press, in viewport cells; null when nothing is selected. */
+    private var selection: Selection? = null
+    private var selecting = false // the finger is still extending it
+    private var actionMode: ActionMode? = null
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
@@ -134,6 +147,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
     }
 
     private fun send(bytes: ByteArray) {
+        if (selection != null) clearSelection()
         if (scrollOffset != 0) {
             scrollOffset = 0
             requestRender()
@@ -200,6 +214,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
             emu.clearDirty()
             picturesValid = true
             drawnOffset = scrollOffset
+            selection?.let { drawSelection(canvas, it, visibleRows) }
             if (scrollOffset == 0 && emu.cursorVisible && emu.cursorRow < visibleRows) drawCursor(canvas, emu)
         }
     }
@@ -405,7 +420,21 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
 
+        override fun onLongPress(e: MotionEvent) {
+            val emu = emulator ?: return
+            if (scaling) return
+            val (col, row) = cellAt(e.x, e.y)
+            selection = synchronized(emu) { Selection.word(emu, row, col, scrollOffset) }
+            selecting = true
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            requestRender()
+        }
+
         override fun onSingleTapUp(e: MotionEvent): Boolean {
+            if (selection != null) {
+                clearSelection()
+                return true
+            }
             val emu = emulator
             if (emu != null && emu.mouseMode != MouseMode.NONE && scrollOffset == 0) {
                 val (col, row) = cellAt(e.x, e.y)
@@ -418,6 +447,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
             if (scaling) return true
+            if (selection != null) clearSelection() // its cells are viewport-relative
             scrollAccumulator += distanceY
             val lines = (scrollAccumulator / cellHeight).toInt()
             if (lines != 0) {
@@ -471,9 +501,102 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (selecting) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    val (col, row) = cellAt(event.x, event.y)
+                    selection = selection?.withFocus(row, col)
+                    requestRender()
+                }
+                MotionEvent.ACTION_UP -> {
+                    selecting = false
+                    showSelectionActions()
+                }
+                MotionEvent.ACTION_CANCEL -> clearSelection()
+            }
+            gestures.onTouchEvent(event) // keeps the detector's state consistent
+            return true
+        }
         scaler.onTouchEvent(event)
         gestures.onTouchEvent(event)
         return true
+    }
+
+    // ---- Selection: long press selects a word, drag extends, a floating bar copies -------
+
+    private fun drawSelection(canvas: Canvas, sel: Selection, visibleRows: Int) {
+        fillPaint.color = (palette.cursor and 0x00FFFFFF) or (0x59 shl 24)
+        for (r in maxOf(sel.startRow, 0)..minOf(sel.endRow, visibleRows - 1)) {
+            val from = if (r == sel.startRow) sel.startCol else 0
+            val to = if (r == sel.endRow) sel.endCol + 1 else cols
+            canvas.drawRect(padding + from * cellWidth, padding + r * cellHeight, padding + to * cellWidth, padding + (r + 1) * cellHeight, fillPaint)
+        }
+    }
+
+    private fun showSelectionActions() {
+        actionMode?.let {
+            it.invalidateContentRect()
+            return
+        }
+        actionMode = startActionMode(object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                menu.add(Menu.NONE, ACTION_COPY, 0, android.R.string.copy)
+                menu.add(Menu.NONE, ACTION_PASTE, 1, android.R.string.paste)
+                return true
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                when (item.itemId) {
+                    ACTION_COPY -> copySelection()
+                    ACTION_PASTE -> clipboardText()?.let(::paste)
+                }
+                clearSelection()
+                return true
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {
+                actionMode = null
+                if (!selecting && selection != null) {
+                    selection = null
+                    requestRender()
+                }
+            }
+
+            override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+                val sel = selection ?: return
+                val oneRow = sel.startRow == sel.endRow
+                val left = if (oneRow) sel.startCol else 0
+                val right = if (oneRow) sel.endCol + 1 else cols
+                outRect.set(
+                    (padding + left * cellWidth).toInt(),
+                    (padding + sel.startRow * cellHeight).toInt(),
+                    (padding + right * cellWidth).toInt(),
+                    (padding + (sel.endRow + 1) * cellHeight).toInt(),
+                )
+            }
+        }, ActionMode.TYPE_FLOATING)
+    }
+
+    private fun copySelection() {
+        val emu = emulator ?: return
+        val sel = selection ?: return
+        val text = synchronized(emu) { sel.text(emu, scrollOffset) }
+        if (text.isNotEmpty()) {
+            context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Terminal", text))
+        }
+    }
+
+    private fun clipboardText(): String? =
+        context.getSystemService(ClipboardManager::class.java)?.primaryClip
+            ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+
+    private fun clearSelection() {
+        selection = null
+        selecting = false
+        actionMode?.finish()
+        requestRender()
     }
 
     /** The cell under a touch point, clamped to the grid. */
@@ -487,5 +610,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         const val DEFAULT_FONT_SP = 13f
         const val MIN_FONT_SP = 8f
         const val MAX_FONT_SP = 28f
+        const val ACTION_COPY = 1
+        const val ACTION_PASTE = 2
     }
 }

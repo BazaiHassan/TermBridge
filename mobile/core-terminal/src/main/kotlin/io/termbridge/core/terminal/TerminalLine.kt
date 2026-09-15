@@ -99,11 +99,19 @@ class TerminalLine(cols: Int) {
     }
 
     /** The row as text with trailing blanks removed (as terminals copy it); empty cells read as spaces. */
-    fun textString(): String {
-        var end = cols
-        while (end > 0 && (text[end - 1] == 0 || text[end - 1] == ' '.code)) end--
-        val sb = StringBuilder(end)
-        for (i in 0 until end) {
+    fun textString(): String = textRange(0, cols)
+
+    /**
+     * Text of cells [from, to): a wide character once (even when only its right half is in range),
+     * with its marks. Trailing blanks are dropped when [trim].
+     */
+    fun textRange(from: Int, to: Int, trim: Boolean = true): String {
+        var start = from.coerceIn(0, cols)
+        var end = to.coerceIn(0, cols)
+        if (start in 1 until end && text[start] == WIDE_TAIL) start--
+        if (trim) while (end > start && (text[end - 1] == 0 || text[end - 1] == ' '.code)) end--
+        val sb = StringBuilder(maxOf(end - start, 0))
+        for (i in start until end) {
             val cp = text[i]
             if (cp == WIDE_TAIL) continue
             sb.appendCodePoint(if (cp == 0) ' '.code else cp)
