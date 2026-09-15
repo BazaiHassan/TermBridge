@@ -1,0 +1,26 @@
+# Go
+/os/bin/
+*.test
+*.out
+
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+
+# Signing secrets — never commit (see "Signing" in README.md)
+keystore.properties
+*.jks
+*.keystore
+*.aab
+.cxx/
+.externalNativeBuild/
+captures/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store

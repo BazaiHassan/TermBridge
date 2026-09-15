@@ -1,0 +1,169 @@
+# Publishes a GitHub release with every downloadable artifact when a v* tag is pushed:
+#   git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
+#
+# Android signing uses these repository secrets (Settings → Secrets and variables → Actions):
+#   TERMBRIDGE_KEYSTORE_BASE64    base64 of the release .jks
+#   TERMBRIDGE_KEYSTORE_PASSWORD  TERMBRIDGE_KEY_ALIAS  TERMBRIDGE_KEY_PASSWORD
+# Without them the release carries debug-signed APKs, clearly named "-debug".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  cli:
+    name: CLI ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          # windows: ConPTY support lands in phase 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: Build
+        working-directory: os
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
+            -o "dist/termbridge-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}" ./agent/cmd/termbridge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: os/dist/*
+
+  desktop-linux:
+    name: Desktop app linux/amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: GUI build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev
+      - name: Build
+        working-directory: os
+        run: |
+          CGO_ENABLED=1 go build -tags desktop -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
+            -o "dist/termbridge-desktop-${GITHUB_REF_NAME}-linux-amd64" ./agent/cmd/termbridge-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-amd64
+          path: os/dist/*
+
+  desktop-macos:
+    name: Desktop app darwin/arm64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: Build
+        working-directory: os
+        run: |
+          CGO_ENABLED=1 go build -tags desktop -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
+            -o "dist/termbridge-desktop-${GITHUB_REF_NAME}-darwin-arm64" ./agent/cmd/termbridge-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-darwin-arm64
+          path: os/dist/*
+
+  android:
+    name: Android APKs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Use maven.google.com directly (the mirror is for geo-blocked networks)
+        run: sed -i '/^termbridge.googleMirror=/d' gradle.properties
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.TERMBRIDGE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "TERMBRIDGE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No signing secrets: publishing debug-signed APKs"
+          fi
+      - name: Build
+        env:
+          TERMBRIDGE_KEYSTORE_PASSWORD: ${{ secrets.TERMBRIDGE_KEYSTORE_PASSWORD }}
+          TERMBRIDGE_KEY_ALIAS: ${{ secrets.TERMBRIDGE_KEY_ALIAS }}
+          TERMBRIDGE_KEY_PASSWORD: ${{ secrets.TERMBRIDGE_KEY_PASSWORD }}
+          TERMBRIDGE_VERSION: ${{ github.ref_name }}
+        run: |
+          if [ "${SIGNED:-}" = 1 ]; then
+            ./gradlew :app:assembleRelease; src=app/build/outputs/apk/release; suffix=""
+          else
+            ./gradlew :app:assembleDebug; src=app/build/outputs/apk/debug; suffix="-debug"
+          fi
+          mkdir -p dist
+          for f in "$src"/*.apk; do
+            abi=$(basename "$f" .apk | sed -E 's/^app-(.*)-(release|debug)$/\1/')
+            cp "$f" "dist/termbridge-${GITHUB_REF_NAME}-android-${abi}${suffix}.apk"
+          done
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: mobile/dist/*
+
+  publish:
+    name: Publish release
+    needs: [cli, desktop-linux, desktop-macos, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            **Phone:** install `termbridge-${{ github.ref_name }}-android-arm64-v8a*.apk` (almost every current phone; `armeabi-v7a` for old 32-bit ones).
+
+            **Computer:** download one of:
+            - `termbridge-desktop-…`: the desktop app. Run it and scan the QR code it shows.
+            - `termbridge-…`: the CLI. Run `chmod +x termbridge-* && ./termbridge-* pair`.
+
+            On macOS, allow the unsigned binary once: `xattr -d com.apple.quarantine <file>`.
+            Windows support arrives in phase 3.
+
+            Check downloads against `SHA256SUMS.txt`. **Never run the agent as root.** Every paired phone would get a root shell.

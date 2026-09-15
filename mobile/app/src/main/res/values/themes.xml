@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TermBridge</string>
+    <color name="ink">#FF0B0E14</color>
+
+    <!-- Compose draws everything; the window theme only sets the pre-first-frame background. -->
+    <style name="Theme.TermBridge" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

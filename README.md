@@ -1,0 +1,182 @@
+# TermBridge
+
+Your computer's shell on your phone. Start the app on the computer, scan the QR code with the
+phone, and you're in. No port forwarding, no SSH keys to manage, no screen frames: only terminal
+bytes travel, end-to-end encrypted, so typing feels local (target: < 50 ms echo on a LAN).
+
+> **Status: phases 0, 1 and 4 are implemented.** That covers the protocol, the terminal, pairing
+> and end-to-end encryption. None of it has been tested on a real phone yet. The relay for use
+> outside the LAN arrives in phase 5.
+
+```
+termbridge/
+├── docs/      PROTOCOL.md (source of truth) · adr/ · vectors/ (golden frames + Noise bytes)
+├── os/        Go 1.24+: agent CLI, desktop app, and later the relay
+└── mobile/    Android app: Kotlin, Jetpack Compose, Hilt, custom VT emulator
+```
+
+The full design, written in Persian, is in [`docs/TermBridge-Architecture.md`](docs/TermBridge-Architecture.md).
+Decisions that refine it are recorded in [`docs/adr/`](docs/adr).
+
+**Downloads:** see [Releases](https://github.com/BazaiHassan/TermBridge/releases). Each release has
+the `termbridge` CLI (Linux, macOS), the desktop app (Linux, macOS), and Android APKs, one per
+CPU type. `SHA256SUMS.txt` lists the checksums. Maintainers publish a release by pushing a tag,
+e.g. `git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1`. That runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+---
+
+## Quick start
+
+### 1. On the computer, choose one of the two front ends
+
+**Desktop app.** It opens a window with a QR code:
+
+```bash
+cd os
+make desktop                          # X11 + Wayland build; needs GL/X11 headers, see below
+./bin/termbridge-desktop
+make install-desktop                  # optional: install to ~/.local/bin and add to the app menu
+```
+
+Build dependencies on Fedora:
+`sudo dnf install gcc libX11-devel libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXxf86vm-devel mesa-libGL-devel`.
+If you only need a Wayland build and don't have the X11 headers, run `make desktop DESKTOP_TAGS="desktop wayland"`.
+
+**CLI.** For servers or headless machines:
+
+```bash
+cd os
+make build
+./bin/termbridge pair                 # prints the QR code in the terminal, pairs, keeps running
+./bin/termbridge run                  # every later start
+```
+
+### 2. On the phone
+
+Install the app, tap **Scan QR code**, and point the camera at the code. Before you tap **Pair**,
+check that the fingerprint shown on the phone matches the one on the computer. The phone then
+opens a shell.
+
+```bash
+cd mobile
+./gradlew :app:installDebug                       # phone connected over adb
+./gradlew :app:assembleRelease                    # signed APKs, one per CPU type (see Signing)
+```
+
+### CLI reference
+
+| Command | What it does |
+|---|---|
+| `termbridge pair` | Shows a QR code with a one-time code that expires after 120 s, pairs a phone, then keeps serving |
+| `termbridge run` | Serves phones that are already paired. Unknown phones are dropped without a reply |
+| `termbridge status` | Shows the fingerprint, whether the agent is running, and paired phones with when each was last seen |
+| `termbridge revoke <name>` | Unpairs a phone. A running agent disconnects it within 1 s |
+| `termbridge reset` | Deletes the identity and every pairing |
+
+Flags for `run` and `pair`: `--port` (default 7423), `--listen`, `--shell`, `--max-sessions`, `-v`.
+
+### "Can't reach …" on the phone
+
+The phone tries every address in the QR code and says which ones failed. The usual causes:
+
+1. **A VPN on the phone** (v2rayNG, Nekobox, …) sends local traffic into the tunnel. Turn on
+   *Bypass LAN*, or pause the VPN.
+2. **Different networks.** Guest Wi-Fi, or "client isolation" on the router, stops devices from
+   seeing each other.
+3. **Firewall on the computer.** Fedora Workstation allows ports 1025–65535 by default. Elsewhere,
+   run `sudo firewall-cmd --add-port=7423/tcp` or `sudo ufw allow 7423/tcp`.
+
+### Tests
+
+```bash
+cd os && make test        # 93 tests: PTYs, Noise, pairing, revocation, end-to-end encrypted shell
+cd mobile && ./gradlew test   # 61 tests: codec, Noise interop, emulator, connection racing
+```
+
+Two sets of golden vectors lock the Go and Kotlin implementations together:
+[`frames.json`](docs/vectors/frames.json) for framing, and [`noise.json`](docs/vectors/noise.json)
+for the exact bytes of the Noise handshake and transport, in both roles.
+
+---
+
+## What works
+
+| Area | Implemented |
+|---|---|
+| Security | Noise_IK_25519_ChaChaPoly_BLAKE2s end to end. The agent's key comes from the QR code, so there's no MITM window. One-time 120 s pairing code inside the encrypted handshake. Allowlist in `devices.json`. Instant revocation. The phone's key is sealed by the Android Keystore (StrongBox when available) ([ADR 0005](docs/adr/0005-keys-and-pairing.md)) |
+| Agent | PTY sessions, output coalescing (first byte sent immediately, then a 5 ms window), 4 MiB backpressure, LAN-only bind, live status line, CLI and desktop front ends over one core |
+| Desktop app | QR window that renews its code automatically, paired phones with Revoke, LIVE indicator (tray icon where the desktop has a tray), app-menu launcher ([ADR 0006](docs/adr/0006-desktop-app.md)) |
+| Phone | CameraX + ML Kit scanner (on-device, no Google services needed), fingerprint check, tries every LAN address and keeps the first to answer, custom VT emulator (truecolor, alt screen, 10 000-line scrollback), sticky Ctrl/Alt key row, pinch zoom |
+
+## Roadmap
+
+| Phase | Scope | State |
+|---|---|---|
+| 0 | Monorepo, protocol, codecs | ✅ |
+| 1 | LAN proof of concept | ✅ |
+| 2 | Full emulator: wide chars, mouse, reflow, selection, recorded `vim`/`htop` replays | partly done |
+| 3 | Windows ConPTY | stub |
+| 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
+| 5 | mDNS discovery, relay for outside the LAN | — |
+| 6 | Auto-reconnect, foreground service, multiple sessions | — |
+| 7 | Installers, settings | — |
+
+---
+
+## Security
+
+TermBridge opens a full shell on your computer, so treat it with the same care as SSH.
+
+- Every byte is encrypted and authenticated end to end. The WebSocket underneath is plain `ws://`
+  because Noise does the protection. A relay (phase 5) will only ever see ciphertext.
+- Only paired phones can connect. Pairing requires the QR code on your screen, whose code works
+  once within 120 s.
+- If a phone is lost, run `termbridge revoke <name>` or use **Revoke** in the desktop app.
+
+**Never run the agent with `sudo` or as root/Administrator.** Every paired phone would get a root
+shell. The agent refuses to run as root unless you pass `--allow-root`. Don't.
+
+### Out of scope
+
+TermBridge doesn't protect against:
+
+- a computer or phone that is already compromised,
+- physical access to an unlocked device, including someone photographing the QR code while it's
+  on screen,
+- traffic analysis: packet sizes and timing reveal typing rhythm.
+
+---
+
+## Signing
+
+Release builds are signed when credentials are available. Otherwise they come out unsigned.
+
+| Source | Used for |
+|---|---|
+| `mobile/keystore.properties` (gitignored): `storeFile`, `storePassword`, `keyAlias`, `keyPassword` | local builds |
+| `TERMBRIDGE_KEYSTORE`, `TERMBRIDGE_KEYSTORE_PASSWORD`, `TERMBRIDGE_KEY_ALIAS`, `TERMBRIDGE_KEY_PASSWORD` | CI (take precedence) |
+
+The release key lives **outside the repository**, at `~/.android/keystores/termbridge-release.jks`.
+Back it up offline together with `keystore.properties`. If you lose it, installed apps can never be
+updated.
+
+`assembleRelease` produces one APK per CPU type (`app-arm64-v8a-release.apk` for almost every
+current phone), because ML Kit's QR model ships a native library for each ABI.
+
+## Building behind regional blocks
+
+Google's download hosts are geo-blocked in some regions. This checkout is set up for that:
+
+| What | Workaround |
+|---|---|
+| Go toolchain | installed from `goproxy.cn` as the `golang.org/toolchain` module into `~/sdk/go1.27.1`. The Makefile finds it there |
+| Go modules | `GOPROXY=https://goproxy.cn,direct` (set by the Makefile) |
+| Google Maven | `termbridge.googleMirror=https://maven.myket.ir` in `mobile/gradle.properties`. Delete that line where `maven.google.com` is reachable |
+
+## Third-party
+
+JetBrains Mono: SIL Open Font License 1.1 ([license](docs/third_party/JetBrainsMono-OFL.txt)).
+Go: `creack/pty`, `coder/websocket`, `flynn/noise`, `skip2/go-qrcode`, `filippo.io/edwards25519`,
+`spf13/cobra`, Fyne. Android: AndroidX, Jetpack Compose, Hilt, OkHttp, BouncyCastle, CameraX,
+ML Kit (bundled barcode model), kotlinx.serialization.

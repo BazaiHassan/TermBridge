@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  go:
+    name: Go agent
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: os
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - name: Cross-compile (linux, darwin, windows)
+        run: make cross
+
+  desktop:
+    name: Desktop app (Linux)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: os
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - name: GUI build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxkbcommon-dev xvfb
+      - run: make desktop
+      - name: Window snapshots
+        run: xvfb-run -a go test -tags desktop -count=1 ./agent/cmd/termbridge-desktop/
+
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Use maven.google.com directly (the mirror is for geo-blocked networks)
+        run: sed -i '/^termbridge.googleMirror=/d' gradle.properties
+      - run: ./gradlew test assembleDebug

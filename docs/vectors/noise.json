@@ -1,0 +1,33 @@
+{
+  "protocol": "Noise_IK_25519_ChaChaPoly_BLAKE2s",
+  "prologue_hex": "5465726d4272696467652f31",
+  "agent_ed25519_seed_hex": "0b83c39a1e09cee74cbb74309e99894705de87622fa519c9c466df7e42f63643",
+  "agent_id": "lA4j9t8H4NGr6QAKRnKFSiYHy97mMEF8MO5NlBB9c3I=",
+  "agent_x25519_public_hex": "b46f999b6c2ea6bdba1495aceb6aefc463c2948d8bce40ea61ea951230098149",
+  "agent_x25519_private_hex": "38ed778c7b78418817b3da6bc9e35f9d3c5079f24b44e692a96627f5458e074a",
+  "device_static_private_hex": "671d864f9e66f7f3dbfb2bfc488b83f7f9ab5eaea13f4af02dc15faf269dafda",
+  "device_static_public_hex": "c797a9eb5585eb47d3885703e3b07b8e42fabba126f3bcc168edf3282c11457a",
+  "initiator_ephemeral_private_hex": "620be318ccfe9b1685ba2954a24c1b57f2cec0e57e5e2e0ae7c831e91d14309f",
+  "responder_ephemeral_private_hex": "4f59b20a2e70ef843c89814a5b15c851882fccafd2ffbde0f825b60d0f90f5ae",
+  "msg1_payload_hex": "7b2270616972223a7b22636f6465223a224141454341775146222c226e616d65223a22506978656c2038227d7d",
+  "msg1_hex": "e91cb54a921625d460fb12619c852bb40a21b4e55077827fd19a9bca6607cd5c1e41041edceebff223b2964afabad263c6560e199aeeabe420ba4068bea05cdc750e2dcf2385816df5f4441ddfa697ebbdb6a46d8670e1e1590dbab20424e0332f8f2e0bc0ecf05b2b0c8dc8f458691058d0ee818e3bb3873340f9452a2859bf784137e23c834ecf6f1c8a5049",
+  "msg2_payload_hex": "",
+  "msg2_hex": "83b5a6ba9c40fbdba070e69b84ff3d88191fba6b8c604849de918e5a5743ef3c7b3bb8a97a7300795c3179d7d5dc55ef",
+  "transport": [
+    {
+      "direction": "initiator_to_responder",
+      "plaintext_hex": "30007b2276223a312c22636c69656e74223a22616e64726f69642f302e312e30227d",
+      "ciphertext_hex": "3548b8e2345285d25329f3c7416fcbfcb0f03e1bd58ba50610fbf6146d40d74a8a599f44f7a5711922984473f2f7d9eccf1f"
+    },
+    {
+      "direction": "responder_to_initiator",
+      "plaintext_hex": "2100000000000000002a",
+      "ciphertext_hex": "3b74b88e9407257b934ff92d92ef63ff43325e8c644610577a0b"
+    },
+    {
+      "direction": "initiator_to_responder",
+      "plaintext_hex": "01016c730d",
+      "ciphertext_hex": "09725736fc8fcf170a43306779837dce7dd69b049c"
+    }
+  ]
+}
