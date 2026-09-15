@@ -1,0 +1,52 @@
+[?1049h[22;0;0t[>4;2m[?1h=[?2004h[?1004h[1;24r[?12h[?12l[22;2t[22;1t[27m[23m[29m[m[H[2J[?25l[24;1H"sample.txt" 32L, 1756B[2;1H▽[6n[2;1H  [3;1HPzz\[0%m[6n[3;1H           [1;1H[>c]10;?]11;?[1;1Hline 01: the quick brown fox jumps over the lazy dog
+line 02: the quick brown fox jumps over the lazy dog[2;53H[K[3;1Hline 03: the quick brown fox jumps over the lazy dog[3;53H[K[4;1Hline 04: the quick brown fox jumps over the lazy dog
+line 05: the quick brown fox jumps over the lazy dog
+line 06: the quick brown fox jumps over the lazy dog
+line 07: the quick brown fox jumps over the lazy dog
+line 08: the quick brown fox jumps over the lazy dog
+line 09: the quick brown fox jumps over the lazy dog
+line 10: the quick brown fox jumps over the lazy dog
+long: 012345678901234567890123456789012345678901234567890123456789012345678901233[12;1H4567890123456789012345678901234567890123456789
+line 11: the quick brown fox jumps over the lazy dog
+line 12: the quick brown fox jumps over the lazy dog
+line 13: the quick brown fox jumps over the lazy dog
+line 14: the quick brown fox jumps over the lazy dog
+line 15: the quick brown fox jumps over the lazy dog
+line 16: the quick brown fox jumps over the lazy dog
+line 17: the quick brown fox jumps over the lazy dog
+line 18: the quick brown fox jumps over the lazy dog
+line 19: the quick brown fox jumps over the lazy dog
+wide: 你好世界 and farsi: ﺱﻼﻣ
+line 20: the quick brown fox jumps over the lazy dog[24;63H1,1[11CTop[?25h[1;1H[?4m[?25l[24;53HG[1;1H[24;53H [23;1H[1;23r[1;1H[10M[1;24r[14;1Hline 21: the quick brown fox jumps over the lazy dog
+line 22: the quick brown fox jumps over the lazy dog
+line 23: the quick brown fox jumps over the lazy dog
+line 24: the quick brown fox jumps over the lazy dog
+line 25: the quick brown fox jumps over the lazy dog
+line 26: the quick brown fox jumps over the lazy dog
+line 27: the quick brown fox jumps over the lazy dog
+line 28: the quick brown fox jumps over the lazy dog
+line 29: the quick brown fox jumps over the lazy dog
+line 30: the quick brown fox jumps over the lazy dog[24;1H[K[24;63H32,1[10CBot[?25h[23;1H[?25l[24;53Ho[23;1H[24;53H [22;1H
+
+[1m-- INSERT --[m[24;63H[K[24;63H33,1[10CBot[1;23r[1;1H[2M[1;24r[23;1H[94m~                                                                               [m[24;63H[K[24;63H33,1[10CBot[?25h[22;1H[?25lh[?25h[?25l[24;66H2[22;2H[?25h[?25le[?25h[?25l[24;66H3[22;3H[?25h[?25ll[?25h[?25l[24;66H4[22;4H[?25h[?25ll[?25h[?25l[24;66H5[22;5H[?25h[?25lo[?25h[?25l[24;66H6[22;6H[?25h[?25l[?25h[?25l[24;66H7[22;7H[?25h[?25l你[?25h[?25l[24;66H10-9[22;9H[?25h[?25l好[?25h[?25l[24;67H3-11[22;11H[?25h[?25l[?25h[?25l[24;67H4-12[22;12H[?25h[?25lw[?25h[?25l[24;67H5-13[22;13H[?25h[?25lo[?25h[?25l[24;67H6-14[22;14H[?25h[?25lr[?25h[?25l[24;67H7-15[22;15H[?25h[?25ll[?25h[?25l[24;67H8-16[22;16H[?25h[?25ld[?25h[?25l[24;67H9-17[22;17H[?25h[24;1H[K[22;16H[?25l[24;53H^[[22;16H[?25h[?25l[24;53H  [22;17H[24;63H33,18-16      Bot[22;16H[?25h[?25l[24;53H:[22;16H[24;53H[K[24;1H:[?25hset number[?25l[22;20H[1;1H[38;5;130m 12 [mline 11: the quick brown fox jumps over the lazy dog
+[38;5;130m 13 [mline 12: the quick brown fox jumps over the lazy dog
+[38;5;130m 14 [mline 13: the quick brown fox jumps over the lazy dog
+[38;5;130m 15 [mline 14: the quick brown fox jumps over the lazy dog
+[38;5;130m 16 [mline 15: the quick brown fox jumps over the lazy dog
+[38;5;130m 17 [mline 16: the quick brown fox jumps over the lazy dog
+[38;5;130m 18 [mline 17: the quick brown fox jumps over the lazy dog
+[38;5;130m 19 [mline 18: the quick brown fox jumps over the lazy dog
+[38;5;130m 20 [mline 19: the quick brown fox jumps over the lazy dog
+[38;5;130m 21 [mwide: 你好世界 and farsi: ﺱﻼﻣ
+[38;5;130m 22 [mline 20: the quick brown fox jumps over the lazy dog
+[38;5;130m 23 [mline 21: the quick brown fox jumps over the lazy dog
+[38;5;130m 24 [mline 22: the quick brown fox jumps over the lazy dog
+[38;5;130m 25 [mline 23: the quick brown fox jumps over the lazy dog
+[38;5;130m 26 [mline 24: the quick brown fox jumps over the lazy dog
+[38;5;130m 27 [mline 25: the quick brown fox jumps over the lazy dog
+[38;5;130m 28 [mline 26: the quick brown fox jumps over the lazy dog
+[38;5;130m 29 [mline 27: the quick brown fox jumps over the lazy dog
+[38;5;130m 30 [mline 28: the quick brown fox jumps over the lazy dog
+[38;5;130m 31 [mline 29: the quick brown fox jumps over the lazy dog
+[38;5;130m 32 [mline 30: the quick brown fox jumps over the lazy dog
+[38;5;130m 33 [mhello 你好 world[24;63H33,18-16      Bot[?25h[22;20H[?25l[24;53H:[22;20H[24;1H[K[24;1H:[?25hq![?25l[?2004l[>4;m[23;2t[23;1t[24;1H[K[24;1H[?1004l[?2004l[?1l>[?1049l[23;0;0t[?25h[>4;m

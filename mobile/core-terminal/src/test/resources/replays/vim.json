@@ -1,0 +1,27 @@
+{
+  "cols": 80,
+  "rows": 24,
+  "command": "vim -u NONE -i NONE -N -n sample.txt",
+  "steps": [
+    {
+      "step": "opened",
+      "offset": 1549
+    },
+    {
+      "step": "end",
+      "offset": 2199
+    },
+    {
+      "step": "inserted",
+      "offset": 3109
+    },
+    {
+      "step": "numbered",
+      "offset": 4825
+    },
+    {
+      "step": "quit",
+      "offset": 4978
+    }
+  ]
+}

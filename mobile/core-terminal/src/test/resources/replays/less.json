@@ -1,0 +1,19 @@
+{
+  "cols": 80,
+  "rows": 24,
+  "command": "less sample.txt",
+  "steps": [
+    {
+      "step": "opened",
+      "offset": 1304
+    },
+    {
+      "step": "end",
+      "offset": 2591
+    },
+    {
+      "step": "quit",
+      "offset": 2619
+    }
+  ]
+}
