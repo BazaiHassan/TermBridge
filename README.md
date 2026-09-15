@@ -151,7 +151,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | 0 | Monorepo, protocol, codecs | ✅ |
 | 1 | LAN proof of concept | ✅ |
 | 2 | Full emulator: wide chars, mouse, reflow, selection, recorded `vim`/`less` replays | wide chars (CJK, emoji), combining marks, mouse (tap = click, drag = wheel; X10 and SGR), long-press selection with copy, reflow on width change and replays of real `vim` and `less` sessions ✅ |
-| 3 | Windows ConPTY | ✅ agent (Windows 10 1809+, tested in CI); Windows desktop app with phase 7 |
+| 3 | Windows ConPTY | ✅ agent and desktop app (Windows 10 1809+; tested and built on Windows in CI) |
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
 | 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | ✅ |
 | 6 | Shells survive disconnects (15 min, replay), auto-reconnect with re-attach, foreground service, multiple sessions | ✅ |
