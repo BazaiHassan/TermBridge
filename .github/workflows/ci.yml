@@ -27,7 +27,10 @@ jobs:
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
-      - run: go test -race -count=1 ./...
+      - name: go test -race
+        run: |
+          # Failures become an annotation: job logs need a login to read.
+          go test -race -count=1 ./... > test.log 2>&1 || { cat test.log; echo "::error title=go test::$(grep -E -B2 -A20 '^(--- FAIL|FAIL|panic:)' test.log | head -c 3500 | tr '\n' ' ')"; exit 1; }
       - name: Cross-compile (linux, darwin, windows)
         run: make cross
 
