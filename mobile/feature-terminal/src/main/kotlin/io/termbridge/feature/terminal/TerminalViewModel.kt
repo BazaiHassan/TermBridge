@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import javax.inject.Inject
 
@@ -73,6 +74,7 @@ private data class StickyKeys(val ctrl: Sticky = Sticky.OFF, val alt: Sticky = S
 class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     sessions: TerminalSessions,
+    private val prefsStore: TerminalPrefsStore,
 ) : ViewModel() {
 
     private val route = savedStateHandle.toRoute<TerminalDestination>()
@@ -84,7 +86,12 @@ class TerminalViewModel @Inject constructor(
 
     var renderRequest: (() -> Unit)? by session::renderRequest
 
-    var fontSizeSp: Float by session::fontSizeSp
+    /** Look and feel from settings; the font size also follows pinch zoom. */
+    val prefs: StateFlow<TerminalPrefs> = prefsStore.prefs.stateIn(viewModelScope, SharingStarted.Eagerly, TerminalPrefs())
+
+    fun setFontSize(sp: Float) {
+        viewModelScope.launch { prefsStore.setFontSize(sp) }
+    }
 
     private val tabs = session.shells.flatMapLatest { shells ->
         if (shells.isEmpty()) flowOf(emptyList()) else combine(shells.map { s -> s.state.map { s to it } }) { it.toList() }

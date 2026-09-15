@@ -24,8 +24,18 @@ class TerminalPalette(
 
     fun indexed(index: Int): Int = table[index and 0xFF]
 
+    /** True for dark backgrounds, so the app chrome around the terminal can match. */
+    val isDark: Boolean
+        get() = ((background shr 16 and 0xFF) * 299 + (background shr 8 and 0xFF) * 587 + (background and 0xFF) * 114) / 1000 < 128
+
     companion object {
         private fun argb(r: Int, g: Int, b: Int) = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+
+        const val NIGHT = "night"
+        const val DAY = "day"
+
+        /** The palette stored under [name] in settings; unknown names get Night. */
+        fun named(name: String): TerminalPalette = if (name == DAY) Day else Night
 
         /** "TermBridge Night": matches the app's ink background and mint accent. */
         val Night = TerminalPalette(
@@ -37,6 +47,19 @@ class TerminalPalette(
                 0xFF59C2FF.toInt(), 0xFFD2A6FF.toInt(), 0xFF5CE1E6.toInt(), 0xFFC7CED9.toInt(),
                 0xFF4A5366.toInt(), 0xFFFF7A85.toInt(), 0xFF6BE9B0.toInt(), 0xFFFFCB7D.toInt(),
                 0xFF82D2FF.toInt(), 0xFFE0C0FF.toInt(), 0xFF86EEF2.toInt(), 0xFFF0F4F8.toInt(),
+            ),
+        )
+
+        /** "TermBridge Day": ink on paper, for bright rooms and sunlight. */
+        val Day = TerminalPalette(
+            background = 0xFFFAFAF7.toInt(),
+            foreground = 0xFF1F2430.toInt(),
+            cursor = 0xFF0E9F6E.toInt(),
+            ansi = intArrayOf(
+                0xFF1F2430.toInt(), 0xFFD7263D.toInt(), 0xFF0E9F6E.toInt(), 0xFFB7791F.toInt(),
+                0xFF1F6FEB.toInt(), 0xFF8250DF.toInt(), 0xFF0B8A93.toInt(), 0xFF6E7781.toInt(),
+                0xFF57606A.toInt(), 0xFFE5534B.toInt(), 0xFF1AAE7A.toInt(), 0xFFC99A2E.toInt(),
+                0xFF3B82F6.toInt(), 0xFFA371F7.toInt(), 0xFF14A3AD.toInt(), 0xFF8C959F.toInt(),
             ),
         )
     }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -57,12 +58,12 @@ import kotlinx.serialization.Serializable
 data object DevicesDestination
 
 /** [live]: agent IDs with a shell open right now. */
-fun NavGraphBuilder.devicesScreen(live: Flow<Set<String>>, onOpen: (PairedMachine) -> Unit, onPair: () -> Unit) {
+fun NavGraphBuilder.devicesScreen(live: Flow<Set<String>>, onOpen: (PairedMachine) -> Unit, onPair: () -> Unit, onSettings: () -> Unit) {
     composable<DevicesDestination> {
         val vm: DevicesViewModel = hiltViewModel()
         val machines by vm.machines.collectAsStateWithLifecycle()
         val liveIds by live.collectAsStateWithLifecycle(emptySet())
-        DevicesScreen(machines = machines, live = liveIds, onOpen = onOpen, onPair = onPair, onForget = vm::forget)
+        DevicesScreen(machines = machines, live = liveIds, onOpen = onOpen, onPair = onPair, onForget = vm::forget, onSettings = onSettings)
     }
 }
 
@@ -73,6 +74,7 @@ fun DevicesScreen(
     onOpen: (PairedMachine) -> Unit,
     onPair: () -> Unit,
     onForget: (PairedMachine) -> Unit,
+    onSettings: () -> Unit = {},
 ) {
     var forgetting by remember { mutableStateOf<PairedMachine?>(null) }
     Scaffold(
@@ -95,7 +97,13 @@ fun DevicesScreen(
         ) {
             item {
                 Column(Modifier.statusBarsPadding()) {
-                    Wordmark()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Wordmark()
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = onSettings) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Terminal settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(

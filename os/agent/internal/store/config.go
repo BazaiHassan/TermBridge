@@ -16,6 +16,9 @@ type Config struct {
 	// Relay is the base URL of the relay (e.g. wss://relay.example.com), or
 	// empty for LAN and direct connections only.
 	Relay string `json:"relay,omitempty"`
+	// Shell is the program new sessions start; empty means the platform
+	// default (pty.DefaultShell). A --shell flag overrides it.
+	Shell string `json:"shell,omitempty"`
 }
 
 // Config loads config.json; a missing file is the zero Config.

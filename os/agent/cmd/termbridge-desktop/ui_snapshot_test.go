@@ -32,7 +32,7 @@ func TestWindowStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u.bind(ag) // no paired phones yet: opens the QR code
+	u.bind(ag, st) // no paired phones yet: opens the QR code
 	u.w.Resize(fyne.NewSize(440, 720))
 	u.Listening([]string{"127.0.0.1:7423", "192.168.100.9:7423"})
 	snapshot(t, u.w, "1-pairing.png")

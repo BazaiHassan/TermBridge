@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,13 +68,15 @@ import io.termbridge.core.ui.theme.TermBridgeTheme
 fun NavGraphBuilder.terminalScreen(onBack: () -> Unit) {
     composable<TerminalDestination> {
         val vm: TerminalViewModel = hiltViewModel()
-        // The terminal is always dark, whatever the system theme.
-        TermBridgeTheme(darkTheme = true) { TerminalScreen(vm, onBack) }
+        val prefs by vm.prefs.collectAsStateWithLifecycle()
+        val palette = TerminalPalette.named(prefs.palette)
+        // The chrome follows the terminal's palette, not the system theme.
+        TermBridgeTheme(darkTheme = palette.isDark) { TerminalScreen(vm, prefs, palette, onBack) }
     }
 }
 
 @Composable
-private fun TerminalScreen(vm: TerminalViewModel, onBack: () -> Unit) {
+private fun TerminalScreen(vm: TerminalViewModel, prefs: TerminalPrefs, palette: TerminalPalette, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     var terminal by remember { mutableStateOf<TerminalView?>(null) }
     val clipboard = LocalClipboardManager.current
@@ -83,7 +86,7 @@ private fun TerminalScreen(vm: TerminalViewModel, onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color(TerminalPalette.Night.background))
+            .background(Color(palette.background))
             .windowInsetsPadding(WindowInsets.safeDrawing), // includes the IME: the grid shrinks → RESIZE
     ) {
         TopBar(
@@ -105,23 +108,27 @@ private fun TerminalScreen(vm: TerminalViewModel, onBack: () -> Unit) {
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(
-                factory = { context ->
-                    TerminalView(context).apply {
-                        fontSizeSp = vm.fontSizeSp
-                        onViewportChanged = vm::onViewportChanged
-                        onInput = vm::sendInput
-                        stickyModifiers = vm::stickyModifiers
-                        onStickyConsumed = vm::consumeSticky
-                        onFontSizeChanged = { vm.fontSizeSp = it }
-                        emulator = vm.emulator
-                        vm.renderRequest = ::requestRender
-                        terminal = this
-                        post { showKeyboard() }
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+            key(palette) { // a new palette needs a new view
+                AndroidView(
+                    factory = { context ->
+                        TerminalView(context, palette).apply {
+                            fontSizeSp = prefs.fontSizeSp
+                            keepScreenOn = prefs.keepScreenOn
+                            onViewportChanged = vm::onViewportChanged
+                            onInput = vm::sendInput
+                            stickyModifiers = vm::stickyModifiers
+                            onStickyConsumed = vm::consumeSticky
+                            onFontSizeChanged = vm::setFontSize
+                            emulator = vm.emulator
+                            vm.renderRequest = ::requestRender
+                            terminal = this
+                            post { showKeyboard() }
+                        }
+                    },
+                    update = { it.keepScreenOn = prefs.keepScreenOn },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             StatusCard(
                 status = ui.status,
                 onRestart = vm::restart,

@@ -155,7 +155,7 @@ for the exact bytes of the Noise handshake and transport, in both roles.
 | 4 | Pairing, Noise, Keystore, QR, desktop app | ✅ code complete; needs a run on a real phone |
 | 5 | Blind relay, direct internet path, addresses that follow the computer, mDNS discovery | ✅ |
 | 6 | Shells survive disconnects (15 min, replay), auto-reconnect with re-attach, foreground service, multiple sessions | ✅ |
-| 7 | Installers, settings | start at login ✅ (CLI and desktop app); settings next |
+| 7 | Installers, settings | start at login and settings ✅ (desktop: relay, shell; phone: text size, Night/Day theme, keep screen on); signed installers next |
 
 ---
 

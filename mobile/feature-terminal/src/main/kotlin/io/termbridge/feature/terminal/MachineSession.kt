@@ -188,9 +188,6 @@ class MachineSession internal constructor(
     @Volatile
     var renderRequest: (() -> Unit)? = null
 
-    /** Kept across screens; the view reads it when recreated. */
-    var fontSizeSp = 13f
-
     private val viewport = MutableStateFlow<Pair<Int, Int>?>(null)
 
     /** Cuts the backoff wait short. */

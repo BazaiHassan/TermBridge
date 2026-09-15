@@ -34,7 +34,9 @@ import io.termbridge.feature.pairing.PairingDestination
 import io.termbridge.feature.pairing.pairingScreen
 import io.termbridge.feature.terminal.TerminalDestination
 import io.termbridge.feature.terminal.TerminalSessions
+import io.termbridge.feature.terminal.TerminalSettingsDestination
 import io.termbridge.feature.terminal.terminalScreen
+import io.termbridge.feature.terminal.terminalSettingsScreen
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Inject
@@ -89,6 +91,7 @@ private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?
             live = live,
             onOpen = { m -> nav.navigate(TerminalDestination(m.agentId, m.name)) },
             onPair = { nav.navigate(PairingDestination) },
+            onSettings = { nav.navigate(TerminalSettingsDestination) },
         )
         pairingScreen(
             onClose = { nav.popBackStack() },
@@ -97,6 +100,7 @@ private fun TermBridgeNavHost(openRequest: MutableStateFlow<TerminalDestination?
             },
         )
         terminalScreen(onBack = { nav.popBackStack() })
+        terminalSettingsScreen(onBack = { nav.popBackStack() })
     }
 }
 

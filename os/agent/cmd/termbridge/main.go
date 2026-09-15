@@ -84,7 +84,7 @@ func newServeCmd(use, short string, pair bool) *cobra.Command {
 	fl := cmd.Flags()
 	fl.IntVar(&f.port, "port", transport.DefaultPort, "LAN port")
 	fl.StringSliceVar(&f.listen, "listen", nil, "explicit listen addresses (host:port); default: every loopback and private address")
-	fl.StringVar(&f.shell, "shell", "", "shell to start (default: $SHELL, else /bin/bash; powershell.exe on Windows)")
+	fl.StringVar(&f.shell, "shell", "", "shell to start (default: the one set in the desktop app's settings, else $SHELL or /bin/bash; PowerShell on Windows)")
 	fl.IntVar(&f.maxSessions, "max-sessions", session.DefaultMaxSessions, "maximum concurrent shell sessions")
 	fl.BoolVar(&f.allowRoot, "allow-root", false, "allow running as root (dangerous: every paired phone gets a root shell)")
 	fl.BoolVarP(&f.verbose, "verbose", "v", false, "debug logging")
@@ -129,7 +129,7 @@ func serve(ctx context.Context, f serveFlags, pair bool) error {
 		return err
 	}
 	a, err := agent.New(agent.Config{
-		Store: st, Listen: f.listen, Port: f.port, Shell: f.shell, MaxSessions: f.maxSessions,
+		Store: st, Listen: f.listen, Port: f.port, Shell: cmp.Or(f.shell, cfg.Shell), MaxSessions: f.maxSessions,
 		Version: version, Logger: log, Events: events, Relay: cfg.Relay, LANOnly: f.lanOnly,
 	})
 	if err != nil {

@@ -55,6 +55,7 @@ type ui struct {
 	empty     *canvas.Text
 	footer    *canvas.Text
 	autostart *widget.Check // start at login
+	st        *store.Store  // settings live in its config.json
 
 	listening, relay string // footer parts
 
@@ -73,8 +74,9 @@ func newUI(a fyne.App) *ui {
 	return u
 }
 
-func (u *ui) bind(ag *agent.Agent) {
+func (u *ui) bind(ag *agent.Agent, st *store.Store) {
 	u.ag = ag
+	u.st = st
 	u.w.SetContent(u.layout())
 	u.reloadDevices()
 	u.setupTray()
@@ -100,7 +102,9 @@ func (u *ui) layout() fyne.CanvasObject {
 	u.statusBg = canvas.NewRectangle(colSurfaceHigh)
 	u.statusBg.CornerRadius = 12
 	pill := container.NewStack(u.statusBg, container.New(layout.NewCustomPaddedLayout(4, 4, 10, 10), u.status))
-	u.header = container.NewBorder(nil, nil, nil, container.NewCenter(pill), word)
+	settings := widget.NewButtonWithIcon("", theme.SettingsIcon(), u.showSettings)
+	settings.Importance = widget.LowImportance
+	u.header = container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(pill), settings), word)
 	identity := text(u.ag.Hostname()+"  ·  "+u.ag.Fingerprint(), colMuted, 12, false)
 
 	// Pairing card: the QR on white (scanners want contrast), countdown, actions.
@@ -348,6 +352,10 @@ func (u *ui) setupTray() {
 		fyne.NewMenuItem("Pair a phone", func() {
 			show()
 			u.startPairing()
+		}),
+		fyne.NewMenuItem("Settings…", func() {
+			show()
+			u.showSettings()
 		}),
 	))
 	desk.SetSystemTrayIcon(iconIdle)

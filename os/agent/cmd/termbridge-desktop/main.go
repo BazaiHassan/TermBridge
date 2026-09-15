@@ -66,7 +66,8 @@ func run(a fyne.App) error {
 	u := newUI(a)
 	ag, err := agent.New(agent.Config{
 		Store:   st,
-		Relay:   cfg.Relay, // set with `termbridge relay <url>`
+		Relay:   cfg.Relay, // settings dialog, or `termbridge relay <url>`
+		Shell:   cfg.Shell,
 		Version: version,
 		Logger:  slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		Events:  u,
@@ -74,7 +75,7 @@ func run(a fyne.App) error {
 	if err != nil {
 		return err
 	}
-	u.bind(ag)
+	u.bind(ag, st)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
