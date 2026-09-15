@@ -32,29 +32,29 @@ class VtParserTest {
 
     @Test
     fun csiParamsWithEmptyAndPrivateMarker() {
-        assertEquals(listOf("csi [-1,5] H"), parse("[;5H"))
-        assertEquals(listOf("csi ?[1049] h"), parse("[?1049h"))
-        assertEquals(listOf("csi [] m"), parse("[m"))
+        assertEquals(listOf("csi [-1,5] H"), parse("\u001b[;5H"))
+        assertEquals(listOf("csi ?[1049] h"), parse("\u001b[?1049h"))
+        assertEquals(listOf("csi [] m"), parse("\u001b[m"))
     }
 
     @Test
     fun colonSubparameters() {
-        assertEquals(listOf("csi [38,:2,:-1,:1,:2,:3] m"), parse("[38:2::1:2:3m"))
+        assertEquals(listOf("csi [38,:2,:-1,:1,:2,:3] m"), parse("\u001b[38:2::1:2:3m"))
     }
 
     @Test
     fun controlsExecuteInsideCsi() {
-        assertEquals(listOf("exec 13", "csi [2] J"), parse("[2\rJ"))
+        assertEquals(listOf("exec 13", "csi [2] J"), parse("\u001b[2\rJ"))
     }
 
     @Test
     fun dcsIsSwallowedUntilStringTerminator() {
-        assertEquals(listOf("esc 0 \\", "print x"), parse("Pq#0;2;0;0;0\\x"))
+        assertEquals(listOf("esc 0 \\", "print x"), parse("\u001bPq#0;2;0;0;0\u001b\\x"))
     }
 
     @Test
     fun canAbortsSequence() {
-        assertEquals(listOf("print A"), parse("[12A"))
+        assertEquals(listOf("print A"), parse("\u001b[12\u0018A"))
     }
 
     @Test
@@ -65,7 +65,7 @@ class VtParserTest {
 
     @Test
     fun overlongOscIsTruncatedNotUnbounded() {
-        val events = parse("]0;" + "x".repeat(10_000) + "")
+        val events = parse("\u001b]0;" + "x".repeat(10_000) + "\u0007")
         assertTrue(events.single().length < 4200)
     }
 }

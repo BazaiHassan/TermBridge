@@ -302,3 +302,19 @@ relay → agent  {"type":"probe_result","port":7423,"reachable":true}
      attempt has failed.
 
   The first handshake to complete wins, and the phone closes the others.
+
+### 9.5 LAN discovery (mDNS)
+
+The agent advertises itself with DNS-SD on its physical LAN interfaces:
+
+| Field | Value |
+|---|---|
+| Service | `_termbridge._tcp.local` |
+| Instance | the computer's host name |
+| Port | the agent's LAN port (7423) |
+| TXT | `v=1`, `id=<agent ID, base64url without padding>` |
+
+The phone browses for the service and matches `id` against its paired machines. A match adds that
+address to the dial list, even when dialing has already started, and the phone stores it for next
+time. So a laptop that gets a new IP from DHCP is still found without scanning a new QR code. The
+record carries no secret: the Noise handshake authenticates the agent as always.

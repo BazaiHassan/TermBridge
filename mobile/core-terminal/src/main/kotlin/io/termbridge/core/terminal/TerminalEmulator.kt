@@ -152,7 +152,7 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
                 'h' -> for (i in 0 until params.size) setPrivateMode(params.raw(i), true)
                 'l' -> for (i in 0 until params.size) setPrivateMode(params.raw(i), false)
             }
-            '>'.code -> if (final == 'c'.code) respond("[>0;10;1c")
+            '>'.code -> if (final == 'c'.code) respond("\u001b[>0;10;1c")
             0 -> csi(params, final.toChar())
         }
     }
@@ -184,10 +184,10 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
             's' -> saveCursor()
             'u' -> restoreCursor()
             'n' -> when (p.raw(0)) {
-                5 -> respond("[0n")
-                6 -> respond("[${cursorRow + 1};${cursorCol + 1}R")
+                5 -> respond("\u001b[0n")
+                6 -> respond("\u001b[${cursorRow + 1};${cursorCol + 1}R")
             }
-            'c' -> if (p.raw(0) <= 0) respond("[?62;22c")
+            'c' -> if (p.raw(0) <= 0) respond("\u001b[?62;22c")
         }
     }
 

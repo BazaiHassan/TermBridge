@@ -37,7 +37,7 @@ enum class Sticky {
 
 /** Translates keys into the byte sequences xterm sends. */
 object KeyEncoder {
-    private const val ESC = ""
+    private const val ESC = "\u001b"
 
     /** [appCursor] is DECCKM (set by vim, less, …): arrows then send `ESC O x`. */
     fun encode(key: Key, mods: Int = Mods.NONE, appCursor: Boolean = false): ByteArray {
@@ -46,9 +46,9 @@ object KeyEncoder {
             Key.ENTER -> if (mods and Mods.ALT != 0) "$ESC\r" else "\r"
             Key.TAB -> if (mods and Mods.SHIFT != 0) "$ESC[Z" else "\t"
             Key.BACKSPACE -> when {
-                mods and Mods.CTRL != 0 -> ""
-                mods and Mods.ALT != 0 -> "$ESC"
-                else -> ""
+                mods and Mods.CTRL != 0 -> "\u0008"
+                mods and Mods.ALT != 0 -> "$ESC\u007f"
+                else -> "\u007f"
             }
             Key.ESCAPE -> ESC
             Key.UP -> cursor('A', m, appCursor)

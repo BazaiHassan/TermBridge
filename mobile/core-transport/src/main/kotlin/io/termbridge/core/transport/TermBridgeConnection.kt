@@ -108,6 +108,22 @@ class TermBridgeConnection internal constructor(
 
     private val directExhausted = CompletableDeferred<Unit>()
 
+    /** Paths found after dialing started (mDNS, PROTOCOL.md §9.5). */
+    private val discovered = CopyOnWriteArrayList<Endpoint>()
+
+    private val allEndpoints: List<Endpoint> get() = endpoints + discovered
+
+    /**
+     * Adds a path found while connecting, e.g. the computer's new LAN address from mDNS. It is
+     * dialed at once; ignored when already connected or when the path is known.
+     */
+    fun addEndpoint(endpoint: Endpoint) {
+        if (channel != null || finished.get()) return
+        if (allEndpoints.any { it.label == endpoint.label }) return
+        discovered += endpoint
+        dial(endpoint)
+    }
+
     private fun dial(endpoint: Endpoint) {
         SecureChannel(endpoint, agentStatic, device, handshakePayload, channelEvents).also {
             attempts += it
@@ -178,8 +194,9 @@ class TermBridgeConnection internal constructor(
     private fun attemptFailed(channel: SecureChannel, failure: SecureChannel.Failure) {
         failures += failure
         if (channel.endpoint.direct) directFailures.incrementAndGet()
-        if (directFailures.get() >= endpoints.count { it.direct }) directExhausted.complete(Unit)
-        if (this.channel == null && failures.size >= endpoints.size) fail(explainFailures(timedOut = false))
+        val all = allEndpoints
+        if (directFailures.get() >= all.count { it.direct }) directExhausted.complete(Unit)
+        if (this.channel == null && failures.size >= all.size) fail(explainFailures(timedOut = false))
     }
 
     private val directFailures = java.util.concurrent.atomic.AtomicInteger()

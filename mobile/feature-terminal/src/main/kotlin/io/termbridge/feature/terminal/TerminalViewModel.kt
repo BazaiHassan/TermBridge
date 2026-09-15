@@ -12,6 +12,7 @@ import io.termbridge.core.terminal.TerminalEmulator
 import io.termbridge.core.transport.ConnectTarget
 import io.termbridge.core.transport.ConnectionState
 import io.termbridge.core.transport.Endpoint
+import io.termbridge.core.transport.LanDiscovery
 import io.termbridge.core.transport.RemoteSession
 import io.termbridge.core.transport.SessionListener
 import io.termbridge.core.transport.TermBridgeClient
@@ -58,6 +59,7 @@ class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val client: TermBridgeClient,
     private val machines: MachineStore,
+    private val discovery: LanDiscovery,
 ) : ViewModel(), SessionListener, TerminalEmulator.Listener {
 
     private val route = savedStateHandle.toRoute<TerminalDestination>()
@@ -121,6 +123,14 @@ class TerminalViewModel @Inject constructor(
             }
             connection = conn
             launch { conn.rttMillis.collect { rtt -> _ui.update { it.copy(rttMillis = rtt) } } }
+            launch {
+                // The computer's current LAN address, even after DHCP gave it a new one (§9.5).
+                discovery.addressesOf(machine.agentId).collect { found ->
+                    machines.addLanAddresses(machine.agentId, found)
+                    found.forEach { runCatching { conn.addEndpoint(Endpoint.parse(it)) } }
+                    if (_ui.value.status is TerminalStatus.Lost) connect() // it came back: reconnect
+                }
+            }
             conn.state.collect { state ->
                 when (state) {
                     is ConnectionState.Connected -> {
@@ -166,7 +176,7 @@ class TerminalViewModel @Inject constructor(
 
     /** Prints a dim local marker line into the terminal. */
     private fun notice(text: String) {
-        synchronized(emulator) { emulator.feed("\r\n[0;2m── $text ──[0m\r\n".encodeToByteArray()) }
+        synchronized(emulator) { emulator.feed("\r\n\u001b[0;2m── $text ──\u001b[0m\r\n".encodeToByteArray()) }
         renderRequest?.invoke()
     }
 

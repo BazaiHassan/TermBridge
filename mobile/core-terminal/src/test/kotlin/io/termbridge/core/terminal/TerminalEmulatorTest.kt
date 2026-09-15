@@ -40,9 +40,9 @@ class TerminalEmulatorTest {
     @Test
     fun cursorPositionAndErase() {
         val t = emu()
-        t.feed("0123456789[1;4H[K")
+        t.feed("0123456789\u001b[1;4H\u001b[K")
         assertEquals("012", t.row(0))
-        t.feed("[2;1Hxyz[2J")
+        t.feed("\u001b[2;1Hxyz\u001b[2J")
         assertEquals("", t.row(0))
         assertEquals("", t.row(1))
     }
@@ -50,7 +50,7 @@ class TerminalEmulatorTest {
     @Test
     fun sgrColorsAndAttributes() {
         val t = emu()
-        t.feed("[1;31mA[38;2;10;20;30mB[38:2::1:2:3mC[48;5;200mD[0mE[94mF")
+        t.feed("\u001b[1;31mA\u001b[38;2;10;20;30mB\u001b[38:2::1:2:3mC\u001b[48;5;200mD\u001b[0mE\u001b[94mF")
         val s = t.line(0).styles
         assertEquals(Style.BOLD, Style.flags(s[0]))
         assertEquals(TermColor.indexed(1), Style.fg(s[0]))
@@ -84,7 +84,7 @@ class TerminalEmulatorTest {
     @Test
     fun scrollRegionLeavesOtherRowsAndScrollback() {
         val t = emu(rows = 4)
-        t.feed("top[2;3r[2;1Ha\r\nb\r\nc")
+        t.feed("top\u001b[2;3r\u001b[2;1Ha\r\nb\r\nc")
         assertEquals(listOf("top", "b", "c", ""), (0..3).map { t.row(it) })
         assertEquals(0, t.scrollback.size)
     }
@@ -93,7 +93,7 @@ class TerminalEmulatorTest {
     fun alternateScreenRestoresMainScreen() {
         val t = emu()
         t.feed("shell$ ")
-        t.feed("[?1049hVIM[?1049l")
+        t.feed("\u001b[?1049hVIM\u001b[?1049l")
         assertEquals("shell$", t.row(0))
         assertEquals(0 to 7, t.cursorRow to t.cursorCol)
         assertFalse(t.isAltScreen)
@@ -110,9 +110,9 @@ class TerminalEmulatorTest {
     @Test
     fun oscTitleWithBelAndSt() {
         val t = emu()
-        t.feed("]0;first")
+        t.feed("\u001b]0;first\u0007")
         assertEquals("first", t.title)
-        t.feed("]2;second\\x")
+        t.feed("\u001b]2;second\u001b\\x")
         assertEquals("second", t.title)
         assertEquals("x", t.row(0))
     }
@@ -126,18 +126,18 @@ class TerminalEmulatorTest {
                 reply = bytes.decodeToString()
             }
         }
-        t.feed("[3;5H[6n")
-        assertEquals("[3;5R", reply)
+        t.feed("\u001b[3;5H\u001b[6n")
+        assertEquals("\u001b[3;5R", reply)
     }
 
     @Test
     fun repeatInsertAndDeleteCharacters() {
         val t = emu()
-        t.feed("-[4b")
+        t.feed("-\u001b[4b")
         assertEquals("-----", t.row(0))
-        t.feed("\r[2@ab")
+        t.feed("\r\u001b[2@ab")
         assertEquals("ab-----", t.row(0))
-        t.feed("\r[3P")
+        t.feed("\r\u001b[3P")
         assertEquals("----", t.row(0))
     }
 
@@ -154,11 +154,11 @@ class TerminalEmulatorTest {
     @Test
     fun decModesAndLineDrawing() {
         val t = emu()
-        t.feed("[?1h[?2004h[?25l")
+        t.feed("\u001b[?1h\u001b[?2004h\u001b[?25l")
         assertTrue(t.appCursorKeys)
         assertTrue(t.bracketedPaste)
         assertFalse(t.cursorVisible)
-        t.feed("(0lqk(Bq")
+        t.feed("\u001b(0lqk\u001b(Bq")
         assertEquals("┌─┐q", t.row(0))
     }
 
@@ -166,7 +166,7 @@ class TerminalEmulatorTest {
     fun dirtyTrackingMarksOnlyTouchedRows() {
         val t = emu()
         t.clearDirty()
-        t.feed("[3;1Hx")
+        t.feed("\u001b[3;1Hx")
         assertEquals(listOf(false, false, true, false), (0..3).map { t.isDirty(it) })
     }
 }

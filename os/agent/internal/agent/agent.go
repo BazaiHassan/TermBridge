@@ -24,6 +24,7 @@ import (
 
 	"github.com/flynn/noise"
 
+	"termbridge/agent/internal/discovery"
 	"termbridge/agent/internal/link"
 	"termbridge/agent/internal/pairing"
 	"termbridge/agent/internal/session"
@@ -203,6 +204,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.log.Info("agent ready", "addresses", len(bound), "fingerprint", a.Fingerprint())
 	a.events.Listening(bound)
 	go a.watchRevocations(ctx)
+	if err := discovery.Advertise(ctx, a.hostname, a.cfg.Port, a.edPub); err != nil {
+		a.log.Warn("LAN discovery unavailable", "err", err)
+	}
 	var relay sync.WaitGroup
 	if a.cfg.Relay != "" && !a.cfg.LANOnly {
 		relay.Add(1)

@@ -293,6 +293,21 @@ class TermBridgeConnectionTest {
     }
 
     @Test
+    fun addressDiscoveredWhileConnectingIsDialedAtOnce() = runTest {
+        val h = Harness(this)
+        runCurrent()
+        h.conn.addEndpoint(Endpoint.Direct("192.168.1.77"))
+        assertEquals(2, h.sockets.size)
+        h.conn.addEndpoint(Endpoint.Direct("192.168.1.77")) // known path: not dialed twice
+        assertEquals(2, h.sockets.size)
+        h.sockets[1].open()
+        h.sockets[1].deliver(Message.HelloAck(1, "a", "linux", "box"))
+        assertEquals("192.168.1.77:7423", h.conn.endpoint?.label)
+        h.conn.addEndpoint(Endpoint.Direct("192.168.1.78")) // already connected: ignored
+        assertEquals(2, h.sockets.size)
+    }
+
+    @Test
     fun endpointParsingAndUrls() {
         assertEquals(Endpoint.Direct("192.168.1.20", 7423), Endpoint.parse("192.168.1.20:7423"))
         assertEquals("ws://[fd00::1]:7423/v1", Endpoint.Direct("fd00::1").url)

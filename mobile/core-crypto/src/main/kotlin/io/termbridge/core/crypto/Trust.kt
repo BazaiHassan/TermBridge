@@ -83,6 +83,11 @@ class MachineStore @Inject constructor(private val vault: Vault) {
 
     suspend fun remove(agentId: String) = update { list -> list.filterNot { it.agentId == agentId } }
 
+    /** Remembers LAN addresses found by mDNS; newest first, at most 8. */
+    suspend fun addLanAddresses(agentId: String, found: List<String>) = update { list ->
+        list.map { m -> if (m.agentId == agentId) m.copy(addresses = (found + m.addresses).distinct().take(8)) else m }
+    }
+
     private suspend fun update(transform: (List<PairedMachine>) -> List<PairedMachine>) = mutex.withLock {
         vault.write(KEY, json.encodeToString(transform(decode(vault.read(KEY)))).encodeToByteArray())
     }

@@ -9,29 +9,29 @@ class KeyEncoderTest {
 
     @Test
     fun arrowsFollowCursorKeyMode() {
-        assertEquals("[A", enc(Key.UP))
-        assertEquals("OA", enc(Key.UP, app = true))
-        assertEquals("[1;5D", enc(Key.LEFT, Mods.CTRL, app = true))
+        assertEquals("\u001b[A", enc(Key.UP))
+        assertEquals("\u001bOA", enc(Key.UP, app = true))
+        assertEquals("\u001b[1;5D", enc(Key.LEFT, Mods.CTRL, app = true))
     }
 
     @Test
     fun editingAndFunctionKeys() {
         assertEquals("\r", enc(Key.ENTER))
-        assertEquals("", enc(Key.BACKSPACE))
-        assertEquals("[Z", enc(Key.TAB, Mods.SHIFT))
-        assertEquals("[3~", enc(Key.DELETE))
-        assertEquals("OP", enc(Key.F1))
-        assertEquals("[15~", enc(Key.F5))
-        assertEquals("[24;2~", enc(Key.F12, Mods.SHIFT))
+        assertEquals("\u007f", enc(Key.BACKSPACE))
+        assertEquals("\u001b[Z", enc(Key.TAB, Mods.SHIFT))
+        assertEquals("\u001b[3~", enc(Key.DELETE))
+        assertEquals("\u001bOP", enc(Key.F1))
+        assertEquals("\u001b[15~", enc(Key.F5))
+        assertEquals("\u001b[24;2~", enc(Key.F12, Mods.SHIFT))
     }
 
     @Test
     fun ctrlAndAltCharacters() {
-        assertEquals("", chr('c', Mods.CTRL))
-        assertEquals("", chr('C', Mods.CTRL))
-        assertEquals("", chr('[', Mods.CTRL))
-        assertEquals("x", chr('x', Mods.ALT))
-        assertEquals("", chr('x', Mods.CTRL or Mods.ALT))
+        assertEquals("\u0003", chr('c', Mods.CTRL))
+        assertEquals("\u0003", chr('C', Mods.CTRL))
+        assertEquals("\u001b", chr('[', Mods.CTRL))
+        assertEquals("\u001bx", chr('x', Mods.ALT))
+        assertEquals("\u001b\u0018", chr('x', Mods.CTRL or Mods.ALT))
         assertEquals("ش", KeyEncoder.encodeChar('ش'.code).decodeToString())
     }
 

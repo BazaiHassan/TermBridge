@@ -92,6 +92,22 @@ func PhoneAddrs(port int) ([]string, error) {
 	return slices.Compact(out), nil
 }
 
+// PhysicalInterfaces returns the interfaces a phone on the same network can
+// reach: up, multicast-capable, not loopback, not container or VPN.
+func PhysicalInterfaces() []net.Interface {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []net.Interface
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp != 0 && ifc.Flags&net.FlagMulticast != 0 && ifc.Flags&net.FlagLoopback == 0 && !isVirtual(ifc.Name) {
+			out = append(out, ifc)
+		}
+	}
+	return out
+}
+
 func isVirtual(name string) bool {
 	for _, p := range virtualPrefixes {
 		if len(name) >= len(p) && name[:len(p)] == p {

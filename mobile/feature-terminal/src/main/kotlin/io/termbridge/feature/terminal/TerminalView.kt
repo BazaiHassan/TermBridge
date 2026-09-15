@@ -116,7 +116,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
     fun paste(text: String) {
         val normalized = text.replace("\r\n", "\r").replace('\n', '\r')
         val bracketed = emulator?.bracketedPaste == true
-        send((if (bracketed) "[200~$normalized[201~" else normalized).encodeToByteArray())
+        send((if (bracketed) "\u001b[200~$normalized\u001b[201~" else normalized).encodeToByteArray())
     }
 
     /** Sends a key from the extra-keys row, applying sticky modifiers. */
