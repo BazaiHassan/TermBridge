@@ -28,7 +28,8 @@ jobs:
           - { goos: linux, goarch: arm64 }
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
-          # windows: ConPTY support lands in phase 3
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,8 +43,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
+          ext=""; if [ "$GOOS" = windows ]; then ext=.exe; fi
           go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" \
-            -o "dist/termbridge-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}" ./agent/cmd/termbridge
+            -o "dist/termbridge-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}${ext}" ./agent/cmd/termbridge
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.goos }}-${{ matrix.goarch }}

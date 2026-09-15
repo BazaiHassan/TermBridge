@@ -32,7 +32,8 @@ type Line struct {
 // New draws on f if f is a terminal.
 func New(f *os.File) *Line {
 	fi, err := f.Stat()
-	return &Line{w: f, tty: err == nil && fi.Mode()&os.ModeCharDevice != 0, peers: make(map[string]int), away: make(map[string]bool)}
+	tty := err == nil && fi.Mode()&os.ModeCharDevice != 0 && enableVT(f)
+	return &Line{w: f, tty: tty, peers: make(map[string]int), away: make(map[string]bool)}
 }
 
 // Write implements io.Writer for the logger.

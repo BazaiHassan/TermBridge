@@ -31,6 +31,23 @@ jobs:
       - name: Cross-compile (linux, darwin, windows)
         run: make cross
 
+  windows:
+    name: Go agent (Windows, ConPTY)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: os
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: os/go.mod
+          cache-dependency-path: os/go.sum
+      - run: go vet ./agent/... ./internal/... ./relay/...
+      # The session and link tests drive /bin/sh; these exercise the Windows code.
+      - run: go test -count=1 ./agent/internal/pty/ ./agent/internal/statusline/ ./internal/...
+      - run: go build -o termbridge.exe ./agent/cmd/termbridge
+
   desktop:
     name: Desktop app (Linux)
     runs-on: ubuntu-latest
