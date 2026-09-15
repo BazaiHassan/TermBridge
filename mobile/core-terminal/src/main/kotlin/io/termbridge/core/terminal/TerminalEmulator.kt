@@ -49,6 +49,14 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
         private set
     var cursorVisible = true
         private set
+
+    /** Mouse reports the application asked for (DECSET 1000, 1002, 1003). */
+    var mouseMode = MouseMode.NONE
+        private set
+
+    /** DECSET 1006: SGR mouse encoding, which has no column limit. */
+    var mouseSgr = false
+        private set
     private var autowrap = true
 
     var title = ""
@@ -229,6 +237,10 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
             25 -> cursorVisible = on
             47, 1047 -> switchScreen(on, saveCursor = false)
             1049 -> switchScreen(on, saveCursor = true)
+            1000 -> mouseMode = if (on) MouseMode.CLICK else MouseMode.NONE
+            1002 -> mouseMode = if (on) MouseMode.DRAG else MouseMode.NONE
+            1003 -> mouseMode = if (on) MouseMode.MOTION else MouseMode.NONE
+            1006 -> mouseSgr = on
             2004 -> bracketedPaste = on
         }
     }
@@ -460,6 +472,8 @@ class TerminalEmulator(cols: Int, rows: Int, scrollbackLines: Int = DEFAULT_SCRO
         appCursorKeys = false
         bracketedPaste = false
         cursorVisible = true
+        mouseMode = MouseMode.NONE
+        mouseSgr = false
         autowrap = true
         lineDrawing = false
         saved = SavedCursor()

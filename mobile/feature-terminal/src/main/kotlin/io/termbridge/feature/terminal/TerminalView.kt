@@ -21,6 +21,8 @@ import androidx.core.content.res.ResourcesCompat
 import io.termbridge.core.terminal.Key
 import io.termbridge.core.terminal.KeyEncoder
 import io.termbridge.core.terminal.Mods
+import io.termbridge.core.terminal.MouseEncoder
+import io.termbridge.core.terminal.MouseMode
 import io.termbridge.core.terminal.Style
 import io.termbridge.core.terminal.TermColor
 import io.termbridge.core.terminal.TerminalEmulator
@@ -397,12 +399,19 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         else -> null
     }
 
-    // ---- Touch: tap = keyboard, drag = scroll history, pinch = font size ---------------
+    // ---- Touch: tap = keyboard (and a click when the app wants the mouse), drag = scroll
+    //      history or the app's wheel, pinch = font size ------------------------------------
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
+            val emu = emulator
+            if (emu != null && emu.mouseMode != MouseMode.NONE && scrollOffset == 0) {
+                val (col, row) = cellAt(e.x, e.y)
+                send(MouseEncoder.press(MouseEncoder.LEFT, col, row, emu.mouseSgr))
+                send(MouseEncoder.release(MouseEncoder.LEFT, col, row, emu.mouseSgr))
+            }
             showKeyboard()
             return true
         }
@@ -413,7 +422,7 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
             val lines = (scrollAccumulator / cellHeight).toInt()
             if (lines != 0) {
                 scrollAccumulator -= lines * cellHeight
-                scrollBy(lines)
+                scrollBy(lines, e2.x, e2.y)
             }
             return true
         }
@@ -436,9 +445,18 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         }
     })
 
-    /** Positive [lines] moves toward newer output. Full-screen apps get arrow keys instead. */
-    private fun scrollBy(lines: Int) {
+    /**
+     * Positive [lines] moves toward newer output. An app that asked for the mouse gets wheel
+     * events at the finger ([x], [y]); other full-screen apps get arrow keys.
+     */
+    private fun scrollBy(lines: Int, x: Float, y: Float) {
         val emu = emulator ?: return
+        if (emu.mouseMode != MouseMode.NONE && scrollOffset == 0) {
+            val (col, row) = cellAt(x, y)
+            val wheel = if (lines > 0) MouseEncoder.WHEEL_DOWN else MouseEncoder.WHEEL_UP
+            repeat(kotlin.math.abs(lines)) { send(MouseEncoder.press(wheel, col, row, emu.mouseSgr)) }
+            return
+        }
         if (emu.isAltScreen) {
             repeat(kotlin.math.abs(lines)) { send(KeyEncoder.encode(if (lines > 0) Key.DOWN else Key.UP, appCursor = emu.appCursorKeys)) }
             return
@@ -457,6 +475,11 @@ class TerminalView(context: Context, private val palette: TerminalPalette = Term
         gestures.onTouchEvent(event)
         return true
     }
+
+    /** The cell under a touch point, clamped to the grid. */
+    private fun cellAt(x: Float, y: Float): Pair<Int, Int> =
+        ((x - padding) / cellWidth).toInt().coerceIn(0, maxOf(cols - 1, 0)) to
+            ((y - padding) / cellHeight).toInt().coerceIn(0, maxOf(rows - 1, 0))
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
 
